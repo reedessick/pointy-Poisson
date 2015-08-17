@@ -117,7 +117,7 @@ for gps in args:
             min_dt = opts.window
 
         if r > 0:
-            pvalue = 1 - np.exp(-r*min_dt) ### cumulative probability of observing min_dt <= observed min_dt | estimated rate
+            pvalue = 1 - np.exp(-r*2*min_dt) ### cumulative probability of observing min_dt <= observed min_dt | estimated rate, the factor of 2 comes from looking on either side of the specified gps time
         else:
             pvalue = 1 ### limit is not great here...need to add CI
         ### SHOULD BE ABLE TO TEST THAT THIS STATISTIC DOES WHAT WE THINK IT SHOULD BY CHECKING RANDOM TIMES AND THE DISTRIBUTION DERIVED THEREFROM

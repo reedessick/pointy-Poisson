@@ -26,6 +26,9 @@ parser.add_option("", "--OfflineOmicronverbose", dest="ooverbose", default=False
 parser.add_option("-c", "--config", default="config.ini", type="string")
 parser.add_option("-w", "--window", default=10, type="float")
 
+parser.add_option("", "--pvalue-print-thr", default=1.0, type="float", help="only print channels/pvalues if they are smaller than this")
+parser.add_option("-C", "--confidence-intervals", default=False, action="store_true", help="compute confidence intervals for rates and pvalues")
+
 parser.add_option("-o", "--output-dir", default="./", type="string")
 
 opts, args = parser.parse_args()
@@ -79,8 +82,7 @@ if oochannels and ochannels:
 #=================================================
 
 for gps in args:
-    if opts.verbose:
-        print "gps : %.9f"%(gps)
+    print "gps : %.9f"%(gps)
 
     #=============================================
     # KW triggers
@@ -239,7 +241,7 @@ for gps in args:
     # cluster triggers?
     #=============================================
 
-    print "\n\n\tWARNING: you may want to cluster triggers!\n\n"
+#    print "\n\n\tWARNING: you may want to cluster triggers!\n\n"
 
     #=============================================
     # generate statistics, plots
@@ -252,22 +254,27 @@ for gps in args:
         r = 0.5*n/opts.window ### point estimate of the rate
 
         if n:
-            min_dt = min(np.abs(np.array([trg[event.col_kw['tcent']] for trg in trgdict[chan]]) - gps))
+            dt = np.array([trg[event.col_kw['tcent']] for trg in trgdict[chan]]) - gps
+            arg = np.argmin(np.abs(dt))
+            min_dt = dt[arg]
         else:
             min_dt = opts.window
+        absmin_dt = abs(min_dt)
 
         if r > 0:
-            pvalue = 1 - np.exp(-r*2*min_dt) ### cumulative probability of observing min_dt <= observed min_dt | estimated rate, the factor of 2 comes from looking on either side of the specified gps time
+            pvalue = 1 - np.exp(-r*2*absmin_dt) ### cumulative probability of observing min_dt <= observed min_dt | estimated rate, the factor of 2 comes from looking on either side of the specified gps time
         else:
             pvalue = 1 ### limit is not great here...need to add CI
 
-        print "\n\tchannel=%s\n\t-> Ntrg=%d\n\t-> rate=%.9e Hz\n\t-> min_dt=%.9e sec\n\t-> pvalue=%.9e"%(chan, n, r, min_dt, pvalue)
+        if (pvalue <= opts.pvalue_print_thr):
+            print "\n\tchannel=%s\n\t-> Ntrg=%d\n\t-> rate=%.9e Hz\n\t-> min_dt=%.9e sec\n\t-> pvalue=%.9e"%(chan, n, r, min_dt, pvalue)
 
-        r_l, r_h = np.array( gci.poisson_bs(conf, n) ) * 0.5 / opts.window
-        pvalue_l = 1 - np.exp(-r_l*2*min_dt)
-        pvalue_h = 1 - np.exp(-r_h*2*min_dt)
+        if opts.confidence_intervals:
+            r_l, r_h = np.array( gci.poisson_bs(conf, n) ) * 0.5 / opts.window
+            pvalue_l = 1 - np.exp(-r_l*2*absmin_dt)
+            pvalue_h = 1 - np.exp(-r_h*2*absmin_dt)
 
-        print "\t-> %.5e confidence:\n\t\tlow rate =%.9e Hz\n\t\thigh rate=%.9e Hz\n\t\tlow pvalue =%.9e\n\t\thigh pvalue=%.9e"%(conf, r_l, r_h, pvalue_l, pvalue_h)
+            print "\t-> %.5e confidence:\n\t\tlow rate =%.9e Hz\n\t\thigh rate=%.9e Hz\n\t\tlow pvalue =%.9e\n\t\thigh pvalue=%.9e"%(conf, r_l, r_h, pvalue_l, pvalue_h)
 
 
 

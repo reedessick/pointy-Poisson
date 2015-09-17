@@ -4,6 +4,7 @@ usage = """pointed.py [--options] gps gps gps..."""
 description="""a script that generates a pointed follow-up of possible auxiliary couplings"""
 
 import numpy as np
+import scipy
 
 from laldetchar.idq import idq
 from laldetchar.idq import event
@@ -25,6 +26,8 @@ parser.add_option("", "--OfflineOmicronverbose", dest="ooverbose", default=False
 
 parser.add_option("-c", "--config", default="config.ini", type="string")
 parser.add_option("-w", "--window", default=10, type="float")
+
+parser.add_option("-n", "--nmax", default=50, type="int", help="the number of events over which we fall back to a gaussian approx for CI")
 
 parser.add_option("", "--pvalue-print-thr", default=1.0, type="float", help="only print channels/pvalues if they are smaller than this")
 parser.add_option("-C", "--confidence-intervals", default=False, action="store_true", help="compute confidence intervals for rates and pvalues")
@@ -123,6 +126,9 @@ for gps in args:
                 durmax = config.getfloat(chan, "durmax")
                 kwtrgdict[chan] = [trg for trg in kwtrgdict[chan] if (trg[event.col_kw['tstop']]-trg[event.col_kw['tstart']] >= durmin) and (trg[event.col_kw['tstop']]-trg[event.col_kw['tstart']] <= durmax) ]
 
+                if opts.verbose:
+                    print "\t\t\tsignifmin = %.3f\n\t\t\tsignifmax = %.3f\n\t\t\tfmin = %.3f\n\t\t\tfmax=%.3f\n\t\t\tdurmin=%.3e\n\t\t\tdurmax=%.3e"%(signifmin, signifmax, fmin, fmax, durmin, durmax)
+
             else:
                 if opts.verbose:
                     print "\t\tWARNING: channel=%s not found, inserting an empty list"%chan
@@ -163,6 +169,9 @@ for gps in args:
                 durmin = config.getfloat(chan, "durmin")
                 durmax = config.getfloat(chan, "durmax")
                 otrgdict[chan] = [trg for trg in otrgdict[chan] if (trg[event.col_snglBurst['duration']] >= durmin) and (trg[event.col_snglBurst['duration']] <= durmax) ]
+
+                if opts.verbose:
+                    print "\t\t\tsnrmin = %.3f\n\t\t\tsnrmax = %.3f\n\t\t\tfmin = %.3f\n\t\t\tfmax=%.3f\n\t\t\tdurmin=%.3e\n\t\t\tdurmax=%.3e"%(snrmin, snrmax, fmin, fmax, durmin, durmax)
 
             else:
                 if opts.verbose:
@@ -205,6 +214,9 @@ for gps in args:
                 durmax = config.getfloat(chan, "durmax")
                 ootrgdict[chan] = [trg for trg in ootrgdict[chan] if (trg[event.col_snglBurst['duration']] >= durmin) and (trg[event.col_snglBurst['duration']] <= durmax) ]
 
+                if opts.verbose:
+                    print "\t\t\tsnrmin = %.3f\n\t\t\tsnrmax = %.3f\n\t\t\tfmin = %.3f\n\t\t\tfmax=%.3f\n\t\t\tdurmin=%.3e\n\t\t\tdurmax=%.3e"%(snrmin, snrmax, fmin, fmax, durmin, durmax)
+
             else:
                 if opts.verbose:
                     print "\t\tWARNING: channel=%s not found, inserting an empty list"%chan
@@ -220,22 +232,18 @@ for gps in args:
     # combine all trgdicts
     #=============================================
     trgdict = event.trigdict()
-    channels = []
     
     ### add kw triggers
     trgdict.add( kwtrgdict )
-    channels += kwchannels
 
     ### add Omicron triggers
     trgdict.add( otrgdict )
-    channels += ochannels
 
     ### add OfflineOmicron triggers
     trgdict.add( ootrgdict )
-    channels += oochannels
 
     ### clean up channel list to get a unique set
-    channels = list(set(channels))
+    channels = kwchannels + list(set(ochannels + oochannels))
 
     #=============================================
     # cluster triggers?
@@ -250,15 +258,22 @@ for gps in args:
         print "\tcomputing statistics, generating plots"
 
     for chan in channels:
+        if "_Omicron" in chan:
+            col = event.col_snglBurst
+            snrkey = 'snr'
+        else:
+            col = event.col_kw
+            snrkey = 'signif'
         n = len(trgdict[chan]) ### number of triggers
         r = 0.5*n/opts.window ### point estimate of the rate
 
         if n:
-            dt = np.array([trg[event.col_kw['tcent']] for trg in trgdict[chan]]) - gps
+            dt = np.array([trg[col['tcent']] for trg in trgdict[chan]]) - gps 
             arg = np.argmin(np.abs(dt))
             min_dt = dt[arg]
         else:
             min_dt = opts.window
+            arg = None
         absmin_dt = abs(min_dt)
 
         if r > 0:
@@ -266,15 +281,34 @@ for gps in args:
         else:
             pvalue = 1 ### limit is not great here...need to add CI
 
-        if (pvalue <= opts.pvalue_print_thr):
-            print "\n\tchannel=%s\n\t-> Ntrg=%d\n\t-> rate=%.9e Hz\n\t-> min_dt=%.9e sec\n\t-> pvalue=%.9e"%(chan, n, r, min_dt, pvalue)
-
         if opts.confidence_intervals:
-            r_l, r_h = np.array( gci.poisson_bs(conf, n) ) * 0.5 / opts.window
+            if n < opts.nmax:
+                r_l, r_h = np.array( gci.poisson_bs(conf, n) ) * 0.5 / opts.window
+            else:
+                
+                s = n**0.5 * (scipy.special.erfinv( conf ) * 2**0.5) ### the size of the standard deviation times the number of standard deviations needed to cover conf
+                r_l = max( 0, (n - s) * 0.5 / opts.window )
+                r_h = (n + s) * 0.5 / opts.window
             pvalue_l = 1 - np.exp(-r_l*2*absmin_dt)
             pvalue_h = 1 - np.exp(-r_h*2*absmin_dt)
 
-            print "\t-> %.5e confidence:\n\t\tlow rate =%.9e Hz\n\t\thigh rate=%.9e Hz\n\t\tlow pvalue =%.9e\n\t\thigh pvalue=%.9e"%(conf, r_l, r_h, pvalue_l, pvalue_h)
+
+        if (pvalue <= opts.pvalue_print_thr):
+            print "\n\tchannel=%s\n\t-> Ntrg=%d\n\t-> rate=%.9e Hz\n\t-> min_dt=%.9e sec"%(chan, n, r, min_dt)
+
+            if arg!=None:
+                trg = trgdict[chan][arg]
+                print "\t\t%s=%.5f\n\t\tfcnt=%.5f Hz\n\t\ttcnt=%.9f"%(snrkey, trg[col[snrkey]], trg[col['fcent']], trg[col['tcent']])
+                if "_Omicron" in chan:
+                    print "\t\tbndw=%.5f Hz\n\t\tdur=%.5f sec"%(trg[col['bandwidth']], trg[col['duration']])
+                else:
+                    print "\t\tdur=%.5f sec"%(trg[col['tstop']]-trg[col['tstart']])
+
+            print "\t-> pvalue=%.9e"%(pvalue)
+
+            if opts.confidence_intervals:
+                print "\t-> %.1f"%(conf*100) + " % confidence:"
+                print "\t\tlow rate =%.9e Hz\n\t\thigh rate=%.9e Hz\n\t\tlow pvalue =%.9e\n\t\thigh pvalue=%.9e"%(r_l, r_h, pvalue_l, pvalue_h)
 
 
 

@@ -42,12 +42,12 @@ config.set("kleinewelle", "basename", opts.basename )
 config.set("kleinewelle", "stride", "%d"%opts.stride )
 
 config.add_section("Omicron")
-config.set("Omicron", "gdsdir", "" )
-config.set("Omicron", "stride", "" )
+config.set("Omicron", "gdsdir", "." )
+config.set("Omicron", "stride", "30" )
 config.set("Omicron", "channels", "" )
 
 config.add_section("OfflineOmicron")
-config.set("OfflineOmicron", "gdsdir", "" )
+config.set("OfflineOmicron", "gdsdir", "." )
 config.set("OfflineOmicron", "channels", "" )
 
 #=================================================
@@ -80,5 +80,6 @@ for chan in sorted(channels):
     config.set( chan, "durmin", "%.6f"%opts.durmin )
     config.set( chan, "durmax", "%.6f"%opts.durmax )
 
-
-config.write( opts.config )
+file_obj = open(opts.config, "w")
+config.write( file_obj )
+file_obj.close()

@@ -254,7 +254,7 @@ for ind, gps in enumerate(args):
     os.system( cmd )
 
     ### set up pointy config file
-    cmd = "python %s/chanlist2config.py --ifo %s1 --gdsdir %s --basename %s --stride %d --signifmin %f --signifmax %f --fmin %f --fmax %f --durmin %f --durmax %f -c %s %s"%(opts.pointybin, opts.observatory, output_dir, "%s-KW_%s_TRIGGERS"%(opts.observatory, tagrds), kwstride, opts.signifmin, opts.signifmax, opts.fmin, opts.fmax, opts.durmin, opts.durmax, pointycnf, coincChanlist)
+    cmd = "python %s/chanlist2config.py --ifo %s1 --gdsdir %s --basename %s --stride %d --signifmin %f --signifmax %f --fmin %f --fmax %f --durmin %f --durmax %f -c %s %s"%(opts.pointybin, opts.observatory, output_dir, "%s-KW_%s_TRIGGERS"%(opts.observatory, tagrds), kwstride, opts.signifmin, opts.signifmax, opts.fmin, opts.fmax, opts.durmin, opts.durmax, pointyconf, coincChanlist)
     if opts.verbose:
         print "\t", cmd
     sp.Popen(cmd.split()).wait()

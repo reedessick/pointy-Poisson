@@ -73,7 +73,7 @@ parser.add_option("-O", "--output-dir", default=".", type="string")
 
 parser.add_option("", "--pointybin", default="/home/idq/fishyStatistics/pointy-Poisson/", type="string" )
 
-parser.add_option("", "--signifmin", default=0.0, type="float")
+parser.add_option("", "--signifmin", default=[0.0], action="append", type="float")
 parser.add_option("", "--signifmax", default=1e6, type="float")
 parser.add_option("", "--fmin", default=0, type="float")
 parser.add_option("", "--fmax", default=16384, type="float")
@@ -125,7 +125,6 @@ for ind, gps in enumerate(args):
     KWrdsconf = "%s/%s-KW-RDS.cnf-%d"%(output_dir, frametype, ind)
 
     coincChanlist = "%s/%s-coinc.chans"%(output_dir, frametype)
-    pointyconf = "%s/%s-RDS.ini"%(output_dir, frametype)
 
     ### go findeth data
     start = (int((gps-opts.coinc_window)/framestride) - 1)*framestride
@@ -254,21 +253,29 @@ for ind, gps in enumerate(args):
     os.system( cmd )
 
     ### set up pointy config file
-    cmd = "python %s/chanlist2config.py --ifo %s1 --gdsdir %s --basename %s --stride %d --signifmin %f --signifmax %f --fmin %f --fmax %f --durmin %f --durmax %f -c %s %s"%(opts.pointybin, opts.observatory, output_dir, "%s-KW_%s_TRIGGERS"%(opts.observatory, tagrds), kwstride, opts.signifmin, opts.signifmax, opts.fmin, opts.fmax, opts.durmin, opts.durmax, pointyconf, coincChanlist)
-    if opts.verbose:
-        print "\t", cmd
-    sp.Popen(cmd.split()).wait()
+    procs = []
+    for signifmin in opts.signifmin:
 
-    ### set up pointy command
-    cmd = "python %s/pointed.py -c %s -w %.6f %.6f"%(opts.pointybin, pointyconf, opts.signif_window, gps)
-    out = "%s/%s-%s-pointy.out"%(output_dir, opts.observatory, tagrds)
-    if opts.verbose:
-        print "\t", cmd
-        print "out : %s"%(out)
-    out_obj = open( out, "w" )
-    proc = sp.Popen(cmd.split(), stdout=out_obj)
-    out_obj.close()
+        pointyconf = "%s/%s-RDS-%d.ini"%(output_dir, frametype, signifmin)
+
+        cmd = "python %s/chanlist2config.py --ifo %s1 --gdsdir %s --basename %s --stride %d --signifmin %f --signifmax %f --fmin %f --fmax %f --durmin %f --durmax %f -c %s %s"%(opts.pointybin, opts.observatory, output_dir, "%s-KW_%s_TRIGGERS"%(opts.observatory, tagrds), kwstride, signifmin, opts.signifmax, opts.fmin, opts.fmax, opts.durmin, opts.durmax, pointyconf, coincChanlist)
+        if opts.verbose:
+            print "\t", cmd
+        sp.Popen(cmd.split()).wait()
+
+        ### set up pointy command
+        cmd = "python %s/pointed.py -c %s -w %.6f %.6f"%(opts.pointybin, pointyconf, opts.signif_window, gps)
+        out = "%s/%s-%s-pointy-%d.out"%(output_dir, opts.observatory, tagrds, signifmin)
+        if opts.verbose:
+            print "\t", cmd
+            print "out : %s"%(out)
+        out_obj = open( out, "w" )
+        proc = sp.Popen(cmd.split(), stdout=out_obj)
+        out_obj.close()
+
+        procs.append( proc )
 
     if opts.wait:
-        proc.wait()
+        for proc in procs:
+            proc.wait()
 

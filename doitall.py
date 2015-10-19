@@ -73,7 +73,7 @@ parser.add_option("-O", "--output-dir", default=".", type="string")
 
 parser.add_option("", "--pointybin", default="/home/idq/fishyStatistics/pointy-Poisson/", type="string" )
 
-parser.add_option("", "--signifmin", default=[0.0], action="append", type="float")
+parser.add_option("", "--signifmin", default=[], action="append", type="float")
 parser.add_option("", "--signifmax", default=1e6, type="float")
 parser.add_option("", "--fmin", default=0, type="float")
 parser.add_option("", "--fmax", default=16384, type="float")
@@ -91,6 +91,9 @@ opts, args = parser.parse_args()
 if not len(args):
     raise ValueError("please supply at least one gps time as an argument")
 args = [float(arg) for arg in args]
+
+if not opts.signifmin:
+    opts.signifmin.append( 0.0 )
 
 if not opts.observatory:
     opts.obervatory = raw_input("observatory = ")

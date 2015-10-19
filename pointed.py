@@ -27,6 +27,8 @@ parser.add_option("", "--OfflineOmicronverbose", dest="ooverbose", default=False
 parser.add_option("-c", "--config", default="config.ini", type="string")
 parser.add_option("-w", "--window", default=10, type="float")
 
+parser.add_option("-e", "--exclude", default=0.0, type="float", help="exclude triggers falling closer than exclude when computing the rate. This is NOT applied when finding the closest trigger and computing a pvalue, only for the rate estimation.")
+
 parser.add_option("-n", "--nmax", default=50, type="int", help="the number of events over which we fall back to a gaussian approx for CI")
 
 parser.add_option("", "--pvalue-print-thr", default=1.0, type="float", help="only print channels/pvalues if they are smaller than this")
@@ -43,6 +45,9 @@ if not len(args):
     sys.exit(0)
 else:
     args = [float(arg) for arg in args]
+
+if opts.exclude >= opts.window:
+    raise ValueError("--exclude is larger than --window. That doesn't make sense")
 
 #=================================================
 
@@ -264,8 +269,8 @@ for gps in args:
         else:
             col = event.col_kw
             snrkey = 'signif'
-        n = len(trgdict[chan]) ### number of triggers
-        r = 0.5*n/opts.window ### point estimate of the rate
+        n = len([ 1.0 for trg in trgdict[chan] if abs(trg[col['tcent']]-gps) >= opts.exclude] ) ### number of triggers beyond exclude
+        r = 0.5*n/(opts.window-opts.exclude) ### point estimate of the rate
 
         if n:
             dt = np.array([trg[col['tcent']] for trg in trgdict[chan]]) - gps 
@@ -283,12 +288,12 @@ for gps in args:
 
         if opts.confidence_intervals:
             if n < opts.nmax:
-                r_l, r_h = np.array( gci.poisson_bs(conf, n) ) * 0.5 / opts.window
+                r_l, r_h = np.array( gci.poisson_bs(conf, n) ) * 0.5 / (opts.window-opts.exclude)
             else:
                 
                 s = n**0.5 * (scipy.special.erfinv( conf ) * 2**0.5) ### the size of the standard deviation times the number of standard deviations needed to cover conf
-                r_l = max( 0, (n - s) * 0.5 / opts.window )
-                r_h = (n + s) * 0.5 / opts.window
+                r_l = max( 0, (n - s) * 0.5 / (opts.window-opts.exclude) )
+                r_h = (n + s) * 0.5 / (opts.window-opts.exclude)
             pvalue_l = 1 - np.exp(-r_l*2*absmin_dt)
             pvalue_h = 1 - np.exp(-r_h*2*absmin_dt)
 

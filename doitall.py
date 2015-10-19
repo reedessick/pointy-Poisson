@@ -50,7 +50,10 @@ def KWchans2KWconfig( KWchans, observatory, tag="C" ):
     for chan in KWchans:
         chan = chan.split("_")
         lF, hF = chan[-2:]
-        chan = "%s:%s"%(chan[0], "_".join(chan[1:-2]))
+        if ":" in chan[1]: ### special case for some slow channels with non standard naming conventions
+            chan = "%sE%s"%(chan[0], "_".join(chan[1:-2]))
+        else:
+            chan = "%s:%s"%(chan[0], "_".join(chan[1:-2]))
         kwconfig += "\nchannel %s %s %s"%(chan, lF, hF)
     return kwconfig
 

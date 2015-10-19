@@ -69,6 +69,7 @@ parser.add_option("-o", "--observatory", default=False, type="string")
 
 parser.add_option("-w", "--coinc-window", default=1.0, type="float")
 parser.add_option("-W", "--signif-window", default=5000.0, type="float")
+parser.add_option("-e", "--exclude", default=0.0, type="float", help="passed on to pointy commands")
 
 parser.add_option("-O", "--output-dir", default=".", type="string")
 
@@ -270,7 +271,7 @@ for ind, gps in enumerate(args):
         sp.Popen(cmd.split()).wait()
 
         ### set up pointy command
-        cmd = "python %s/pointed.py -c %s -w %.6f %.6f"%(opts.pointybin, pointyconf, opts.signif_window, gps)
+        cmd = "python %s/pointed.py -c %s -w %.6f -e %.6f %.6f"%(opts.pointybin, pointyconf, opts.signif_window, opts.exclude, gps)
         out = "%s/%s-%s-pointy-%d.out"%(output_dir, opts.observatory, tagrds, signifmin)
         if opts.verbose:
             print "\t", cmd

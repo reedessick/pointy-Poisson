@@ -112,7 +112,11 @@ if opts.plot:
 
     nbins = (len(pvalues) + len(unsafes))/8 ### could produce poor binning...
 
-    bins = np.logspace( np.log10(min(np.min(pvalues), np.min(unsafes))), 0, nbins)
+    this_min = np.min(pvalues)
+    if unsafes:
+        this_min = min(this_min, np.min(unsafes))
+    
+    bins = np.logspace( np.log10(this_min), 0, nbins)
     ax.hist( [pvalues, unsafes], bins=bins, histtype="barstacked", color=['g', 'r'], label=['safe', 'unsafe'], log=False)
 
     ax.set_xlabel('min{pvalue}')

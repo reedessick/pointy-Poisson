@@ -101,6 +101,9 @@ for key in keys:
 #=================================================
 ### make the plot
 if opts.plot:
+    if not (len(pvalues) + len(unsafes)):
+        raise ValueError("nothing to plot!")
+
     if opts.verbose:
         print "plotting"
 

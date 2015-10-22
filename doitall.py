@@ -86,7 +86,8 @@ parser.add_option("", "--durmax", default=100.0, type="float")
 
 #====
 
-parser.add_option("", "--wait", default=False, action="store_true")
+parser.add_option("-p", "--pvalue", default=1.0, type="float")
+parser.add_option("-u", "--unsafe", default=None, type="string")
 
 #====
 
@@ -261,6 +262,7 @@ for ind, gps in enumerate(args):
 
     ### set up pointy config file
     procs = []
+    outs = []
     for signifmin in opts.signifmin:
 
         pointyconf = "%s/%s-RDS-%d.ini"%(output_dir, frametype, signifmin)
@@ -273,16 +275,29 @@ for ind, gps in enumerate(args):
         ### set up pointy command
         cmd = "python %s/pointed.py -c %s -w %.6f -e %.6f %.6f"%(opts.pointybin, pointyconf, opts.signif_window, opts.exclude, gps)
         out = "%s/%s-%s-pointy-%d.out"%(output_dir, opts.observatory, tagrds, signifmin)
+        err = "%s/%s-%s-pointy-%d.err"%(output_dir, opts.observatory, tagrds, signifmin)
+        outs.append( out )
         if opts.verbose:
             print "\t", cmd
             print "out : %s"%(out)
+            print "err : %s"%(err)
         out_obj = open( out, "w" )
-        proc = sp.Popen(cmd.split(), stdout=out_obj)
+        err_obj = open( err, "w" )
+        proc = sp.Popen(cmd.split(), stdout=out_obj, stderr=err_obj )
         out_obj.close()
+        err_obj.close()
 
         procs.append( proc )
 
-    if opts.wait:
-        for proc in procs:
-            proc.wait()
+    for proc in procs:
+        proc.wait()
+
+    ### define participation job
+    cmd = "python %s/participation.py -p %.6e -P -o %s %s"%(opts.pointybin, opts.pvalue, opts.output_dir, " ".join(outs))
+    if opts.unsafe:
+        cmd += " -u %s"%(opts.unsafe)
+    if opts.verbose:
+        print "\t", cmd
+    sp.Popen(cmd.split()).wait()
+
 

@@ -73,7 +73,7 @@ keys = sorted(chans.keys())
 for key in keys:
     pvalue = chans[key]
 
-    print >> file_obj, key
+    print >> file_obj, "%.6e\t%s"%(pvalue, key)
     if pvalue <= opts.pvalue:
         print >> file_OBJ, key
 

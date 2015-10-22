@@ -55,7 +55,7 @@ for filename in args:
             chans[chan].append( (p, lines[ind:nind+1], filename) )
             ind = ind
         ind += 1
-chans = dict( (key, np.prod(p for p, _, _ in chans[key])) for key in chans.keys())
+chans = dict( [ (key, np.prod([p for p, _, _ in chans[key]])) for key in chans.keys() ] )
 
 #=================================================
 ### write the summary file
@@ -94,11 +94,10 @@ if opts.plot:
     ax = plt.subplot(1,1,1)
 
     nbins = len(pvalues)/8 ### could produce poor binning...
+    this_min = min( pvalues )
 
-    this_min = np.min(pvalues)
-    
     bins = np.logspace( np.log10(this_min), 0, nbins)
-    ax.hist( pvalues, bins=bins, histtype="bar", color='g', log=False)
+    ax.hist( pvalues, bins=bins, histtype="bar", color='g', log=True )
 
     ax.set_xlabel('prod{pvalue}')
     ax.set_ylabel('count')

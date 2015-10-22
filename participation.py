@@ -91,11 +91,12 @@ for key in keys:
     print >> file_obj, string
     if pvalue <= opts.pvalue:
         print >> file_OBJ, string
-    
-    if key in unsafe_chans:
-        unsafes.append( pvalue )
-    else:
-        pvalues.append( pvalue )
+
+    if opts.plot:    
+        if key in unsafe_chans:
+            unsafes.append( pvalue )
+        else:
+            pvalues.append( pvalue )
 
 #=================================================
 ### make the plot

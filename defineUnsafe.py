@@ -21,6 +21,8 @@ parser.add_option("-P", "--plot", default=False, action="store_true")
 parser.add_option("-o", "--output-dir", default=".", type="string")
 parser.add_option("-t", "--tag", default="", type="string")
 
+parser.add_option("-n", "--nperbin", default=8, type="int")
+
 opts, args = parser.parse_args()
 
 if opts.tag:
@@ -93,7 +95,7 @@ if opts.plot:
     fig = plt.figure()
     ax = plt.subplot(1,1,1)
 
-    nbins = len(pvalues)/8 ### could produce poor binning...
+    nbins = len(pvalues)/opts.nperbin ### could produce poor binning...
     this_min = min( pvalues )
 
     bins = np.logspace( np.log10(this_min), 0, nbins)

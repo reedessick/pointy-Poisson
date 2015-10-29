@@ -91,6 +91,10 @@ parser.add_option("-u", "--unsafe", default=None, type="string")
 
 #====
 
+parser.add_option("-t", "--frame-type", default="C", type="string", help="either \"C\" (default) or \"R\"")
+
+#====
+
 opts, args = parser.parse_args()
 
 if not len(args):
@@ -109,8 +113,8 @@ if not os.path.exists(opts.output_dir):
 
 #=================================================
 
-frametype = "%s1_C"%(opts.observatory)
-tag = "C"
+tag = opts.frame_type
+frametype = "%s1_%s"%(opts.observatory, tag)
 tagrds="%s-RDS"%(tag)
 
 #=================================================
@@ -158,7 +162,7 @@ for ind, gps in enumerate(args):
     if opts.verbose:
         print "\tsetting up KW config : %s"%KWconf
     file_obj = open( KWconf, "w" )
-    file_obj.write( FrChannels2KWconfig( frchannels, opts.observatory ) )
+    file_obj.write( FrChannels2KWconfig( frchannels, opts.observatory, tag=tag ) )
     file_obj.close()
 
     ### launch KW process

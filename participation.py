@@ -94,6 +94,7 @@ for key in keys:
 
     if opts.plot:    
         if key in unsafe_chans:
+            print "%.6e : %s"%(pvalue, key)
             unsafes.append( pvalue )
         else:
             pvalues.append( pvalue )

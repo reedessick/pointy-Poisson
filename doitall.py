@@ -297,7 +297,7 @@ for ind, gps in enumerate(args):
         proc.wait()
 
     ### define participation job
-    cmd = "python %s/participation.py -p %.6e -P -o %s %s"%(opts.pointybin, opts.pvalue, opts.output_dir, " ".join(outs))
+    cmd = "python %s/participation.py -p %.6e -P -o %s %s"%(opts.pointybin, opts.pvalue, output_dir, " ".join(outs))
     if opts.unsafe:
         cmd += " -u %s"%(opts.unsafe)
     if opts.verbose:

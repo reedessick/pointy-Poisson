@@ -1,3 +1,4 @@
+#!/usr/bin/python
 description = """an all-in-one pointy analysis tool"""
 usage = """doitall.py [--options] gps gps gps..."""
 
@@ -9,9 +10,21 @@ from optparse import OptionParser
 
 #=================================================
 
-framestride=64
+frqmap = {
+        65536.0:[(8,128), (32,2048), (1024,4096), (2048,8192)],
+        32768.0:[(8,128), (32,2048), (1024,4096), (2048,8192)],
+        16384.0:[(8,128), (32,2048), (1024,4096), (2048,8192)],
+         8192.0:[(8,128), (32,2048), (1024,4096), (2048,8192)],
+         4096.0:[(8,128), (32,2048), (1024,4096)],
+         2048.0:[(8,128), (32,2048)],
+         1024.0:[(8,128), (32,1024)],
+          512.0:[(8,128), (32,512)],
+          256.0:[(8,128), (32,256)],
+           16.0:[],
+        }
 
-kwstride = 64
+#========================
+
 KWconfig_header = """stride %.1f
 basename %s-KW_%s_TRIGGERS
 segname %s-KW_%s_SEGMENTS
@@ -19,22 +32,9 @@ significance 15.0
 threshold 3.0
 decimateFactor -1"""
 
-frqmap = {
-        65536.0:[(1,16), (8,128), (32,2048), (1024,4096), (2048,8192)],
-        32768.0:[(1,16), (8,128), (32,2048), (1024,4096), (2048,8192)],
-        16384.0:[(1,16), (8,128), (32,2048), (1024,4096), (2048,8192)],
-         8192.0:[(1,16), (8,128), (32,2048), (1024,4096), (2048,8192)],
-         4096.0:[(1,16), (8,128), (32,2048), (1024,4096)],
-         2048.0:[(1,16), (8,128), (32,2048)],
-         1024.0:[(1,16), (8,128), (32,1024)],
-          512.0:[(1,16), (8,128), (32,512)],
-          256.0:[(1,16), (8,128), (32,256)],
-           16.0:[(1,8)],
-        }
-
 #=================================================
 
-def FrChannels2KWconfig( FrChannels, observatory, tag="C" ):
+def FrChannels2KWconfig( FrChannels, observatory, tag="C", kwstride=32 ):
     kwconfig = KWconfig_header%(kwstride, observatory, tag, observatory, tag)
     for line in FrChannels.split("\n"):
         if not line:
@@ -45,7 +45,7 @@ def FrChannels2KWconfig( FrChannels, observatory, tag="C" ):
             kwconfig += "\nchannel %s %d %d"%(chan, minF, maxF)
     return kwconfig
 
-def KWchans2KWconfig( KWchans, observatory, tag="C" ):
+def KWchans2KWconfig( KWchans, observatory, tag="C", kwstride=32 ):
     kwconfig = KWconfig_header%(kwstride, observatory, tag, observatory, tag)
     for chan in KWchans:
         chan = chan.split("_")
@@ -65,17 +65,24 @@ parser = OptionParser(description=description, usage=usage)
 
 parser.add_option("-v", "--verbose", default=False, action="store_true")
 
+#==== options about data ranges
+
 parser.add_option("-o", "--observatory", default=False, type="string")
+
+parser.add_option("-t", "--frame-type", default="C", type="string", help="either \"C\" (default) or \"R\"")
+
+#==== options about KW processing and frame width
+
+parser.add_option("-s", "--kwstride", default=32, type="int", help="desired stride for KW analysis. Should be a power of 2")
+parser.add_option("-S", "--framestride", default=64, type="int", help="duration of frames. Should be a power of 2")
+
+#==== options about pointy analysis
+
+parser.add_option("", "--pointybin", default="/home/idq/fishyStatistics/pointy-Poisson/", type="string" )
 
 parser.add_option("-w", "--coinc-window", default=1.0, type="float")
 parser.add_option("-W", "--signif-window", default=5000.0, type="float")
 parser.add_option("-e", "--exclude", default=0.0, type="float", help="passed on to pointy commands")
-
-parser.add_option("-O", "--output-dir", default=".", type="string")
-
-#====
-
-parser.add_option("", "--pointybin", default="/home/idq/fishyStatistics/pointy-Poisson/", type="string" )
 
 parser.add_option("", "--signifmin", default=[], action="append", type="float")
 parser.add_option("", "--signifmax", default=1e6, type="float")
@@ -84,14 +91,12 @@ parser.add_option("", "--fmax", default=16384, type="float")
 parser.add_option("", "--durmin", default=0.0, type="float")
 parser.add_option("", "--durmax", default=100.0, type="float")
 
-#====
+#==== options about output and post-processing
 
 parser.add_option("-p", "--pvalue", default=1.0, type="float")
 parser.add_option("-u", "--unsafe", default=None, type="string")
 
-#====
-
-parser.add_option("-t", "--frame-type", default="C", type="string", help="either \"C\" (default) or \"R\"")
+parser.add_option("-O", "--output-dir", default=".", type="string")
 
 #====
 
@@ -139,7 +144,7 @@ for ind, gps in enumerate(args):
     coincChanlist = "%s/%s-coinc.chans"%(output_dir, frametype)
 
     ### go findeth data
-    start = (int((gps-opts.coinc_window)/framestride) - 1)*framestride
+    start = (int((gps-opts.coinc_window)/opts.framestride) - 1)*opts.framestride
     end = gps + opts.coinc_window
     cmd = "gw_data_find -o %s --type %s -u file -s %d -e %d"%(opts.observatory, frametype, start, end)
     if opts.verbose:
@@ -162,7 +167,7 @@ for ind, gps in enumerate(args):
     if opts.verbose:
         print "\tsetting up KW config : %s"%KWconf
     file_obj = open( KWconf, "w" )
-    file_obj.write( FrChannels2KWconfig( frchannels, opts.observatory, tag=tag ) )
+    file_obj.write( FrChannels2KWconfig( frchannels, opts.observatory, tag=tag, kwstride=opts.kwstride ) )
     file_obj.close()
 
     ### launch KW process
@@ -190,7 +195,7 @@ for ind, gps in enumerate(args):
     ### scrape trg files to get coincident triggers
     if opts.verbose:
         print "\tfinding %s-KW_%s_TRIGGERS files"%(opts.observatory, tag)
-    trgfiles = sorted(glob.glob("%s/%s-KW_%s_TRIGGERS-*/%s-KW_%s_TRIGGERS-*-%d.trg"%(output_dir, opts.observatory, tag, opts.observatory, tag, kwstride) ))
+    trgfiles = sorted(glob.glob("%s/%s-KW_%s_TRIGGERS-*/%s-KW_%s_TRIGGERS-*-%d.trg"%(output_dir, opts.observatory, tag, opts.observatory, tag, opts.kwstride) ))
     if opts.verbose:
         print "\t\tfound %d files\n\tsearching for triggers coincident to within %.3f sec"%(len(trgfiles), opts.coinc_window)
     chans = set()
@@ -210,7 +215,7 @@ for ind, gps in enumerate(args):
     if opts.verbose:
         print "\t\tfound %s coincident channels\n\tsetting up RDS KWconfig : %s"%(len(chans), KWrdsconf)
     file_obj = open(KWrdsconf, "w")
-    file_obj.write( KWchans2KWconfig( chans, opts.observatory, tag=tagrds ) )
+    file_obj.write( KWchans2KWconfig( chans, opts.observatory, tag=tagrds, kwstride=opts.kwstride ) )
     file_obj.close()
 
     if opts.verbose:
@@ -271,7 +276,7 @@ for ind, gps in enumerate(args):
 
         pointyconf = "%s/%s-RDS-%d.ini"%(output_dir, frametype, signifmin)
 
-        cmd = "python %s/chanlist2config.py --ifo %s1 --gdsdir %s --basename %s --stride %d --signifmin %f --signifmax %f --fmin %f --fmax %f --durmin %f --durmax %f -c %s %s"%(opts.pointybin, opts.observatory, output_dir, "%s-KW_%s_TRIGGERS"%(opts.observatory, tagrds), kwstride, signifmin, opts.signifmax, opts.fmin, opts.fmax, opts.durmin, opts.durmax, pointyconf, coincChanlist)
+        cmd = "python %s/chanlist2config.py --ifo %s1 --gdsdir %s --basename %s --stride %d --signifmin %f --signifmax %f --fmin %f --fmax %f --durmin %f --durmax %f -c %s %s"%(opts.pointybin, opts.observatory, output_dir, "%s-KW_%s_TRIGGERS"%(opts.observatory, tagrds), opts.kwstride, signifmin, opts.signifmax, opts.fmin, opts.fmax, opts.durmin, opts.durmax, pointyconf, coincChanlist)
         if opts.verbose:
             print "\t", cmd
         sp.Popen(cmd.split()).wait()

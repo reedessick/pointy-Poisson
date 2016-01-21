@@ -71,6 +71,11 @@ parser.add_option("-o", "--observatory", default=False, type="string")
 
 parser.add_option("-t", "--frame-type", default="C", type="string", help="either \"C\" (default) or \"R\"")
 
+parser.add_option("", "--whitelist", default=False, type="string", help="a file containing a list of channel names defining which channels should be analyzed. Only the channels in this list will be analyzed and we require an exact match. Channel names should be as they come out of the frames (less IFO prefix). Default is False, so all channels present will be allowed.")
+parser.add_option("", "--error-if-absent", default=False, action="store_true", help="raise an error if one of the channels in --whitelist is not found in the frames")
+
+parser.add_option("", "--blacklist", default=False, type="string", help="a file containing a list of channel names defining which channels should not be analyzed. Channel names should be as they come out of the frames (less IFO prefix). Default is False, so all channels present will be allowed.")
+
 #==== options about KW processing and frame width
 
 parser.add_option("-s", "--kwstride", default=32, type="int", help="desired stride for KW analysis. Should be a power of 2")
@@ -115,6 +120,30 @@ if not opts.observatory:
 cwd = os.getcwd()
 if not os.path.exists(opts.output_dir):
     os.makedirs(opts.output_dir)
+
+#=================================================
+
+if opts.whitelist:
+    if opts.verbose:
+        print "loading whitelist from : %s"%(opts.whitelist)
+    file_obj = open(opts.whitelist, "r")
+    whitelist = [line.strip() for line in file_obj.readlines() if line.strip()]
+    file_obj.close()
+
+if opts.blacklist:
+    if opts.verbose:
+        print "loading blacklist from : %s"%(opts.blacklist)
+    file_obj = open(opts.blacklist, "r")
+    blacklist = [line.strip() for line in file_obj.readlines() if line.strip()]
+    file_obj.close()
+
+    ### check for conflict with whitelist
+    if opts.whitelist:
+        if opts.verbose:
+           print "checking whitelist and blacklist for conflicts"
+        for chan in whitelist:
+            if chan in blacklist:
+                raise ValueError("channel:%s in both whitelist and blacklist and is therefore ambiguous."%chan)
 
 #=================================================
 
@@ -163,7 +192,40 @@ for ind, gps in enumerate(args):
     if opts.verbose:
         print "\t", cmd
     frchannels = sp.Popen(cmd.split(), stdout=sp.PIPE).communicate()[0]
-   
+  
+    if opts.whitelist:
+        if opts.verbose:
+            print "\tkeeping channels in whitelist"
+        absent = False
+        frchans = ""
+        for line in frchannels.split("\n"):
+            if not line: 
+                continue
+            chan, freq = line.split()
+            chan = chan[3:] ### remove the prefix
+            if chan in whitelist: ### channel is in the allowed set
+                frchans += "%s\n"%(line)
+            else:
+                absent = True
+        if opts.error_if_absent and absent:
+            raise ValueError("at least one channel from whitelist was not found in the frame!")
+        frchannels = frchans ### only keep the ones that were allowed
+
+    if opts.blacklist:
+        if opts.verbose:
+            print "\tremoving channels in blacklist"
+        frchans = ""
+        for line in frchannels.split("\n"):
+            if not line: 
+                continue
+            chan, freq = line.split()
+            chan = chan[3:]
+            if chan in blacklist:
+                pass ### ignore this
+            else:
+                frchans += "%s\n"%(line)
+        frchannels = frchans
+
     if opts.verbose:
         print "\tsetting up KW config : %s"%KWconf
     file_obj = open( KWconf, "w" )
@@ -180,8 +242,8 @@ for ind, gps in enumerate(args):
     err = "%s/%s.err"%(output_dir, frametype)
     if opts.verbose:
         print "\t", cmd
-        print "\tout : %s"%(out)
-        print "\terr : %s"%(err)
+        print "\t\tout : %s"%(out)
+        print "\t\terr : %s"%(err)
     out_obj = open( out, "w" )
     err_obj = open( err, "w" )
     proc = sp.Popen(cmd.split(), stdout=out_obj, stderr=err_obj)
@@ -249,8 +311,8 @@ for ind, gps in enumerate(args):
     err = "%s/%s-RDS.err"%(output_dir, frametype)
     if opts.verbose:
         print "\t", cmd
-        print "\tout : %s"%(out)
-        print "\terr : %s"%(err)
+        print "\t\tout : %s"%(out)
+        print "\t\terr : %s"%(err)
     out_obj = open( out, "w" )
     err_obj = open( err, "w" )
     proc = sp.Popen(cmd.split(), stdout=out_obj, stderr=err_obj)
@@ -288,8 +350,8 @@ for ind, gps in enumerate(args):
         outs.append( out )
         if opts.verbose:
             print "\t", cmd
-            print "out : %s"%(out)
-            print "err : %s"%(err)
+            print "\t\tout : %s"%(out)
+            print "\t\terr : %s"%(err)
         out_obj = open( out, "w" )
         err_obj = open( err, "w" )
         proc = sp.Popen(cmd.split(), stdout=out_obj, stderr=err_obj )

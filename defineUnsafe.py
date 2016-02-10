@@ -176,7 +176,7 @@ if opts.plot:
 
     bins = np.logspace( np.log10(this_min), 0, nbins)
 #    ax.hist( pvalues, bins=bins, histtype="bar", color='g', log=True )
-    ax.hist( [pvalues, unsafes], bins=bins, histtype="barstacked", color=['g', 'r'], log=True )
+    ax.hist( [pvalues, unsafes], bins=bins, histtype="step", color=['g', 'r'], label=['safe', 'unsafe'], log=True )
 
     ax.set_xlabel('$\Pi_i\mathrm{pvalue}_i^{1/%d}$'%(Ntrials))
     ax.set_ylabel('$\mathrm{count}$')
@@ -190,7 +190,7 @@ if opts.plot:
     if opts.xmin!=None:
         ax.set_xlim(xmin=opts.xmin)
     ax.set_xlim(xmax=1.0)
-    ax.set_ylim(ymin=0.1)
+    ax.set_ylim(ymin=0.5)
 
     figname = "%s/stacked-pvalue%s.png"%(opts.output_dir, opts.tag)
     if opts.verbose:

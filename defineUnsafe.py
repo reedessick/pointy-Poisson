@@ -89,7 +89,7 @@ if opts.snglchan_histograms:
         ax = fig.gca()
 
         n = len(pvalues)
-        ax.hist( pvalues )
+        ax.hist( pvalues, histtype='step' )
 
         ax.plot( [10**(np.sum(pvalues/Ntrials))]*2, ax.get_ylim(), 'k-', linewidth=2, alpha=0.5 )
 
@@ -133,10 +133,12 @@ chans = dict( [ (key, 10**(np.sum([np.log(p) for p, _, _ in chans[key]])/Ntrials
 ### write the summary file
 filename = "%s/present%s.out"%(opts.output_dir, opts.tag)
 fileNAME = "%s/unsafe%s.out"%(opts.output_dir, opts.tag)
+fileName = "%s/unexpected_unsafe%s.out"%(opts.output_dir, opts.tag)
 if opts.verbose:
-    print "writing :\n\t%s\n\t%s"%(filename, fileNAME)
+    print "writing :\n\t%s\n\t%s\n\t%s"%(filename, fileNAME, fileName)
 file_obj = open(filename, "w")
 file_OBJ = open(fileNAME, "w")
+file_Obj = open(fileName, "w")
 
 ### order the lists
 if opts.plot:
@@ -149,12 +151,18 @@ for key,pvalue in items:
     print >> file_obj, "%.6e\t%s"%(pvalue, key)
     if pvalue <= opts.pvalue:
         print >> file_OBJ, key
+        if key not in expected_unsafe:
+            print >> file_Obj, key
 
     if opts.plot:
         if key in expected_unsafe:
             unsafes.append( pvalue )
         else:
             pvalues.append( pvalue )
+
+file_obj.close()
+file_OBJ.close()
+file_Obj.close()
 
 #=================================================
 ### make the plot
@@ -202,4 +210,3 @@ if opts.plot:
         print "\t%s"%(figname)
     fig.savefig(figname)
     plt.close(fig)
-

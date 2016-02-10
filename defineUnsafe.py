@@ -91,7 +91,7 @@ if opts.snglchan_histograms:
         n = len(pvalues)
         ax.hist( pvalues )
 
-        ax.plot( [np.exp(np.sum(np.log(pvalues)/Ntrials))]*2, ax.get_ylim(), 'k-', linewidth=2, alpha=0.5 )
+        ax.plot( [10**(np.sum(pvalues/Ntrials))]*2, ax.get_ylim(), 'k-', linewidth=2, alpha=0.5 )
 
         ax.set_xlabel('log10(pvalue)')
         ax.set_ylabel('count')
@@ -127,7 +127,7 @@ if opts.present_histogram:
     fig.savefig( figname )
     plt.close( fig )
 
-chans = dict( [ (key, np.exp(np.sum([np.log(p) for p, _, _ in chans[key]])/Ntrials) ) for key in chans.keys() ] )
+chans = dict( [ (key, 10**(np.sum([np.log(p) for p, _, _ in chans[key]])/Ntrials) ) for key in chans.keys() ] )
 
 #=================================================
 ### write the summary file

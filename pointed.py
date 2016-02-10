@@ -88,6 +88,9 @@ if oochannels and ochannels:
     print "WARNING: you've specified both Omicron and OfflineOmicron channels. In the event of a conflict, the OfflineOmicron data will be preferred!"
 
 #=================================================
+### clean up channel list to get a unique set
+channels = kwchannels + list(set(ochannels + oochannels))
+#=================================================
 
 for gps in args:
     print "gps : %.9f"%(gps)
@@ -246,9 +249,6 @@ for gps in args:
 
     ### add OfflineOmicron triggers
     trgdict.add( ootrgdict )
-
-    ### clean up channel list to get a unique set
-    channels = kwchannels + list(set(ochannels + oochannels))
 
     #=============================================
     # cluster triggers?

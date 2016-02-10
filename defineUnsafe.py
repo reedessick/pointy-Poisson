@@ -176,7 +176,10 @@ if opts.plot:
 
     bins = np.logspace( np.log10(this_min), 0, nbins)
 #    ax.hist( pvalues, bins=bins, histtype="bar", color='g', log=True )
-    ax.hist( [pvalues, unsafes], bins=bins, histtype="step", color=['g', 'r'], label=['safe', 'unsafe'], log=True )
+    if unsafes:
+        ax.hist( [pvalues, unsafes], bins=bins, histtype="step", color=['g', 'r'], label=['safe', 'unsafe'], log=True )
+    else:
+        ax.hist( [pvalues], bins=bins, histtype="step", color=['g'], label=['safe'], log=True )
 
     ax.set_xlabel('$\Pi_i\mathrm{pvalue}_i^{1/%d}$'%(Ntrials))
     ax.set_ylabel('$\mathrm{count}$')
@@ -186,6 +189,8 @@ if opts.plot:
     ax.grid(True, which="both")
 
     ax.plot( [opts.pvalue]*2, plt.gca().get_ylim(), 'k--', linewidth=2 )
+
+    ax.legend(loc='best')
 
     if opts.xmin!=None:
         ax.set_xlim(xmin=opts.xmin)

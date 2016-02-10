@@ -82,8 +82,8 @@ Ntrials = len(args) ### number of trials
 if opts.snglchan_histograms:
     if opts.verbose:
         print "plotting single-channel histograms:"
-    for chan, pvalues in chans.items():
-        pvalues = np.log10([p[0] for p in pvalues])
+    for chan in sorted(chans.keys()):
+        pvalues = np.log10([p[0] for p  in chans[chan]])
 
         fig = plt.figure()
         ax = fig.gca()
@@ -92,6 +92,8 @@ if opts.snglchan_histograms:
         ax.hist( pvalues, histtype='step' )
 
         ax.plot( [10**(np.sum(pvalues/Ntrials))]*2, ax.get_ylim(), 'k-', linewidth=2, alpha=0.5 )
+
+        ax.set_xlim(xmin=min(pvalues), xmax=0)
 
         ax.set_xlabel('log10(pvalue)')
         ax.set_ylabel('count')

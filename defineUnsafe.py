@@ -31,7 +31,11 @@ parser.add_option("", "--present-histogram", default=False, action="store_true")
 
 parser.add_option("", "--expected-unsafe", default=None, type="string", help="only used to determine colors on histograms")
 
+<<<<<<< 9be27f615237e5e81b1758a15730bf6160801bf4
 parser.add_option("", "--single-population", default=False, action="store_true", help="when averaging, we assume there is a single population of events and use N=len(args) instead of just the number of times the channel actually showed up")
+=======
+parser.add_option("", "--sngltime-pvalue", default=0.0, type="float")
+>>>>>>> added some more complete output statements
 
 opts, args = parser.parse_args()
 
@@ -95,14 +99,17 @@ if opts.snglchan_histograms:
         n = len(pvalues)
         ax.hist( pvalues, histtype='step' )
 
-        ax.plot( [10**(np.sum(pvalues/Ntrials))]*2, ax.get_ylim(), 'k-', linewidth=2, alpha=0.5 )
+        ax.plot( [np.sum(pvalues/Ntrials)]*2, ax.get_ylim(), 'k-', linewidth=2, alpha=0.5 )
 
-        ax.set_xlim(xmin=min(pvalues), xmax=0)
+        xmin = [p for p in pvalues if p>0]
+        if xmin:
+            ax.set_xlim(xmin=min(xmin), xmax=0)
 
         ax.set_xlabel('log10(pvalue)')
         ax.set_ylabel('count')
 
-        ax.set_title(chan.replace("_","\_"))
+#        ax.set_title(chan.replace("_","\_"))
+        ax.set_title(chan)
 
         fig.text( 0.15, 0.95, 'N = %d'%(n), ha='left', va='top' )
 
@@ -133,6 +140,36 @@ if opts.present_histogram:
     fig.savefig( figname )
     plt.close( fig )
 
+if opts.sngltime_pvalue > 0:
+    filename = "%s/snglchan_pvalues%s.out"%(opts.output_dir, opts.tag)
+    fileNAME = "%s/snglchan_pvalues_unexpected%s.out"%(opts.output_dir, opts.tag)
+    fileName = "%s/snglchan_pvalues_expected%s.out"%(opts.output_dir, opts.tag)
+    if opts.verbose:
+        print "writing :\n\t%s\n\t%s\n\t%s"%(filename, fileNAME, fileName)
+    file_obj = open(filename, "w")
+    file_OBJ = open(fileNAME, "w")
+    file_Obj = open(fileName, "w")
+    for chan in sorted(chans.keys()):
+        values = [ _ for _ in chans[chan] if _[0] < opts.sngltime_pvalue ]
+        if values:
+            print >> file_obj, chan
+            for (p, _, filename) in values:
+                print >> file_obj, "    pvalue=%.9e\tfilename=%s"%(p, filename)
+
+            if chan not in expected_unsafe:
+                print >>file_OBJ, chan
+                for (p, _, filename) in values:
+                    print >> file_OBJ, "    pvalue=%.9e\tfilename=%s"%(p, filename)
+
+            else:
+                print >>file_Obj, chan
+                for (p, _, filename) in values:
+                    print >> file_Obj, "    pvalue=%.9e\tfilename=%s"%(p, filename)
+
+    file_obj.close()     
+    file_OBJ.close()     
+    file_Obj.close()     
+
 if opts.single_population:
     chans = dict( [ (key, 10**(np.sum([np.log(p) for p, _, _ in chans[key]])/Ntrials) ) for key in chans.keys() ] )
 else:
@@ -143,11 +180,13 @@ else:
 filename = "%s/present%s.out"%(opts.output_dir, opts.tag)
 fileNAME = "%s/unsafe%s.out"%(opts.output_dir, opts.tag)
 fileName = "%s/unexpected_unsafe%s.out"%(opts.output_dir, opts.tag)
+FileName = "%s/unexpected_safe%s.out"%(opts.output_dir, opts.tag)
 if opts.verbose:
-    print "writing :\n\t%s\n\t%s\n\t%s"%(filename, fileNAME, fileName)
+    print "writing :\n\t%s\n\t%s\n\t%s\n\t%s"%(filename, fileNAME, fileName, FileName)
 file_obj = open(filename, "w")
 file_OBJ = open(fileNAME, "w")
 file_Obj = open(fileName, "w")
+File_Obj = open(FileName, "w")
 
 ### order the lists
 if opts.plot:
@@ -161,7 +200,9 @@ for key,pvalue in items:
     if pvalue <= opts.pvalue:
         print >> file_OBJ, key
         if key not in expected_unsafe:
-            print >> file_Obj, key
+            print >> file_Obj, key ### unexpected_unsafe
+        else: 
+            print >> File_Obj, key ### unexpected_safe
 
     if opts.plot:
         if key in expected_unsafe:

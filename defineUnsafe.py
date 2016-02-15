@@ -31,11 +31,9 @@ parser.add_option("", "--present-histogram", default=False, action="store_true")
 
 parser.add_option("", "--expected-unsafe", default=None, type="string", help="only used to determine colors on histograms")
 
-<<<<<<< 9be27f615237e5e81b1758a15730bf6160801bf4
 parser.add_option("", "--single-population", default=False, action="store_true", help="when averaging, we assume there is a single population of events and use N=len(args) instead of just the number of times the channel actually showed up")
-=======
+
 parser.add_option("", "--sngltime-pvalue", default=0.0, type="float")
->>>>>>> added some more complete output statements
 
 opts, args = parser.parse_args()
 

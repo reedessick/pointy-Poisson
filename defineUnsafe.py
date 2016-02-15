@@ -31,10 +31,14 @@ parser.add_option("", "--present-histogram", default=False, action="store_true")
 
 parser.add_option("", "--expected-unsafe", default=None, type="string", help="only used to determine colors on histograms")
 
+parser.add_option("", "--single-population", default=False, action="store_true", help="when averaging, we assume there is a single population of events and use N=len(args) instead of just the number of times the channel actually showed up")
+
 opts, args = parser.parse_args()
 
 if opts.tag:
     opts.tag = "_%s"%(opts.tag)
+if opts.single_population:
+    opts.tag = "_snglPop%s"%(opts.tag)
 
 nargs = len(args)
 if not nargs:
@@ -129,7 +133,10 @@ if opts.present_histogram:
     fig.savefig( figname )
     plt.close( fig )
 
-chans = dict( [ (key, 10**(np.sum([np.log(p) for p, _, _ in chans[key]])/Ntrials) ) for key in chans.keys() ] )
+if opts.single_population:
+    chans = dict( [ (key, 10**(np.sum([np.log(p) for p, _, _ in chans[key]])/Ntrials) ) for key in chans.keys() ] )
+else:
+    chans = dict( [ (key, 10**(np.sum([np.log(p) for p, _, _ in chans[key]])/len(chans[key])) ) for key in chans.keys() ] )
 
 #=================================================
 ### write the summary file
@@ -191,7 +198,10 @@ if opts.plot:
     else:
         ax.hist( [pvalues], bins=bins, histtype="step", color=['g'], label=['safe'], log=True )
 
-    ax.set_xlabel('$\Pi_i\mathrm{pvalue}_i^{1/%d}$'%(Ntrials))
+    if opts.single_population:
+        ax.set_xlabel('$\Pi_i\mathrm{pvalue}_i^{1/%d}$'%(Ntrials))
+    else:
+        ax.set_xlabel('$\Pi_i\mathrm{pvalue}_i^{1/N_i}$')
     ax.set_ylabel('$\mathrm{count}$')
 
     ax.set_xscale("log")

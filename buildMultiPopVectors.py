@@ -1,6 +1,6 @@
 #!/usr/bin/python
 usage = "buildMultiPopVectors.py [--options] pointy.out pointy.out pointy.out ..."
-description = "given a set of channels (which define a \"feature\" space of correlations), this script builds vectors in that space based on the pvalues extracted from pointy.out files supplied as arguments. The pvalues are stored as -log10(p) in the vectors"
+description = "given a set of channels (which define a \"feature\" space of correlations), this script builds vectors in that space based on the pvalues extracted from pointy.out files supplied as arguments. The pvalues are stored as sqrt(-log10(p)) in the vectors so that Euclidean distance look like the product of probabilities"
 author = "reed.essick@ligo.org"
 
 import numpy as np
@@ -73,6 +73,7 @@ for pointy in args:
                 vect[indmap[chan]] = -np.log10( float(lines[nind].strip().split("=")[-1]) )
             ind = ind
         ind += 1
+    vect = vect**0.5 ### we take the square root of the log of probabilities so that the Euclidean distance looks like a product of probabilities
 
     if opts.verbose:
         print "    found %d non-zero significances"%(np.sum(vect>0))

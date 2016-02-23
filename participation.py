@@ -1,4 +1,5 @@
-usage = "python participation.py [--options] pointy.out pointy.out pointy.out ..."
+#!/usr/bin/python
+usage = "participation.py [--options] pointy.out pointy.out pointy.out ..."
 description = "picks the best pvalue for each channel from multiple pointy.out files"
 author = "Reed Essick (reed.essick@ligo.org)"
 
@@ -20,6 +21,7 @@ parser.add_option("-P", "--plot", default=False, action="store_true")
 parser.add_option("", "--cumulative", default=False, action="store_true")
 
 parser.add_option("-u", "--unsafe", default=False, type="string", help="a list of unsafe channels. Only used to color the plot. We require an exact match for channel to be flagged")
+parser.add_option("", "--exactMatch-unsafe", default=False, action="store_true", help="require an exact match for channel names when determining safety. If not supplied, we assume KW channel name format and convert back to \"raw\" channel names to perform matching")
 
 parser.add_option("-o", "--output-dir", default=".", type="string")
 parser.add_option("-t", "--tag", default="", type="string")
@@ -67,6 +69,11 @@ if opts.unsafe:
     file_obj = open(opts.unsafe, "r")
     unsafe_chans = [ line.strip() for line in file_obj if line.strip()]
     file_obj.close()
+    if not opts.exactMatch_unsafe: ### assume KW channel names!
+        uchans = []
+        for chan in unsafe_chans:
+           uchans.append( "_".join(chan.split("_")[:-2]) )
+        unsafe_chans = uchans
 else:
     unsafe_chans = []
 
@@ -95,7 +102,11 @@ for key in keys:
         print >> file_OBJ, string
 
     if opts.plot:    
-        if key in unsafe_chans:
+        if not opts.exactMatch_unsafe: ### assume KW channel names!
+            safetykey = "_".join(key.split("_")[:-2])
+        else:
+            safetykey = key
+        if safetykey in unsafe_chans:
             print "%.6e : %s"%(pvalue, key)
             unsafes.append( pvalue )
         else:

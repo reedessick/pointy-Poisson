@@ -1,3 +1,4 @@
+#!/usr/bin/python
 usage = "python defineUnsafe.py [--options] pointy.out pointy.out pointy.out ..."
 description = "stacks pvalues to determine safety"
 author = "Reed Essick (reed.essick@ligo.org)"
@@ -30,10 +31,13 @@ parser.add_option("", "--snglchan-histograms", default=False, action="store_true
 parser.add_option("", "--present-histogram", default=False, action="store_true")
 
 parser.add_option("", "--expected-unsafe", default=None, type="string", help="only used to determine colors on histograms")
+parser.add_option("", "--exactMatch-unsafe", default=False, action="store_true", help="require an exact match for channel names when determining safety. If not supplied, we assume KW channel name format and convert back to \"raw\" channel names to perform matching")
 
 parser.add_option("", "--single-population", default=False, action="store_true", help="when averaging, we assume there is a single population of events and use N=len(args) instead of just the number of times the channel actually showed up")
 
 parser.add_option("", "--sngltime-pvalue", default=0.0, type="float")
+
+parser.add_option("", "--cumulative", default=False, action="store_true")
 
 opts, args = parser.parse_args()
 
@@ -55,6 +59,11 @@ if opts.expected_unsafe != None:
     file_obj = open(opts.expected_unsafe, "r")
     expected_unsafe = [line.strip() for line in file_obj.readlines() if line.strip()]
     file_obj.close()
+    if not opts.exactMatch_unsafe:
+        uchans = []
+        for chan in expected_unsafe:
+           uchans.append( "_".join(chan.split("_")[:-2]) )
+        expected_unsafe = uchans
 else:
     expected_unsafe = []
 
@@ -95,7 +104,7 @@ if opts.snglchan_histograms:
         ax = fig.gca()
 
         n = len(pvalues)
-        ax.hist( pvalues, histtype='step' )
+        ax.hist( pvalues, histtype='step', cumulative=opts.cumulative, normed=opts.cumulative )
 
         ax.plot( [np.sum(pvalues/Ntrials)]*2, ax.get_ylim(), 'k-', linewidth=2, alpha=0.5 )
 
@@ -124,7 +133,7 @@ if opts.present_histogram:
     fig = plt.figure()
     ax = fig.gca()
 
-    ax.hist( [len(pvalues) for pvalues in chans.values()], histtype='step' )
+    ax.hist( [len(pvalues) for pvalues in chans.values()], histtype='step', cumulative=opts.cumulative, normed=opts.cumulative )
 
     ax.set_xlabel('No. of appearences')
     ax.set_ylabel('count')
@@ -154,7 +163,12 @@ if opts.sngltime_pvalue > 0:
             for (p, _, filename) in values:
                 print >> file_obj, "    pvalue=%.9e\tfilename=%s"%(p, filename)
 
-            if chan not in expected_unsafe:
+            if not opts.exactMatch_unsafe: ### assume KW channel names!
+                safetychan = "_".join(chan.split("_")[:-2])            
+            else:
+                safetychan = chan
+
+            if safetychan not in expected_unsafe:
                 print >>file_OBJ, chan
                 for (p, _, filename) in values:
                     print >> file_OBJ, "    pvalue=%.9e\tfilename=%s"%(p, filename)
@@ -169,9 +183,9 @@ if opts.sngltime_pvalue > 0:
     file_Obj.close()     
 
 if opts.single_population:
-    chans = dict( [ (key, 10**(np.sum([np.log(p) for p, _, _ in chans[key]])/Ntrials) ) for key in chans.keys() ] )
+    chans = dict( [ (key, np.exp(np.sum([np.log(p) for p, _, _ in chans[key]])/Ntrials) ) for key in chans.keys() ] )
 else:
-    chans = dict( [ (key, 10**(np.sum([np.log(p) for p, _, _ in chans[key]])/len(chans[key])) ) for key in chans.keys() ] )
+    chans = dict( [ (key, np.exp(np.sum([np.log(p) for p, _, _ in chans[key]])/len(chans[key])) ) for key in chans.keys() ] )
 
 #=================================================
 ### write the summary file
@@ -192,18 +206,26 @@ if opts.plot:
     unsafes = []
 items = chans.items()
 items.sort(key=lambda l:l[1])
+already_printed = set()
 for key,pvalue in items:
+
+    if not opts.exactMatch_unsafe: ### assume KW channel names!
+        safetykey = "_".join(key.split("_")[:-2])
+    else:
+        safetykey = key
 
     print >> file_obj, "%.6e\t%s"%(pvalue, key)
     if pvalue <= opts.pvalue:
-        print >> file_OBJ, key
-        if key not in expected_unsafe:
-            print >> file_Obj, key ### unexpected_unsafe
-        else: 
-            print >> File_Obj, key ### unexpected_safe
+        if safetykey not in already_printed:
+            print >> file_OBJ, key
+            if safetykey not in expected_unsafe:
+                print >> file_Obj, key ### unexpected_unsafe
+            else: 
+                print >> File_Obj, key ### unexpected_safe
+        already_printed.add( key )
 
     if opts.plot:
-        if key in expected_unsafe:
+        if safetykey in expected_unsafe:
             unsafes.append( pvalue )
         else:
             pvalues.append( pvalue )
@@ -233,15 +255,18 @@ if opts.plot:
     bins = np.logspace( np.log10(this_min), 0, nbins)
 #    ax.hist( pvalues, bins=bins, histtype="bar", color='g', log=True )
     if unsafes:
-        ax.hist( [pvalues, unsafes], bins=bins, histtype="step", color=['g', 'r'], label=['safe', 'unsafe'], log=True )
+        ax.hist( [pvalues, unsafes], bins=bins, histtype="step", color=['g', 'r'], label=['safe', 'unsafe'], log=True, cumulative=opts.cumulative, normed=opts.cumulative )
     else:
-        ax.hist( [pvalues], bins=bins, histtype="step", color=['g'], label=['safe'], log=True )
+        ax.hist( [pvalues], bins=bins, histtype="step", color=['g'], label=['safe'], log=True, cumulative=opts.cumulative, normed=opts.cumulative )
 
     if opts.single_population:
         ax.set_xlabel('$\Pi_i\mathrm{pvalue}_i^{1/%d}$'%(Ntrials))
     else:
         ax.set_xlabel('$\Pi_i\mathrm{pvalue}_i^{1/N_i}$')
-    ax.set_ylabel('$\mathrm{count}$')
+    if opts.cumulative:
+        ax.set_ylabel('$\mathrm{fraction\ of\ events}$')
+    else:
+        ax.set_ylabel('$\mathrm{count}$')
 
     ax.set_xscale("log")
 
@@ -254,7 +279,8 @@ if opts.plot:
     if opts.xmin!=None:
         ax.set_xlim(xmin=opts.xmin)
     ax.set_xlim(xmax=1.0)
-    ax.set_ylim(ymin=0.5)
+    if not opts.cumulative:
+        ax.set_ylim(ymin=0.5)
 
     figname = "%s/stacked-pvalue%s.png"%(opts.output_dir, opts.tag)
     if opts.verbose:

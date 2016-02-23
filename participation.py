@@ -17,6 +17,8 @@ parser.add_option("-v", "--verbose", default=False, action="store_true")
 parser.add_option("-p", "--pvalue", default=1, type="float", help="the pvalue threshold used to define participation")
 
 parser.add_option("-P", "--plot", default=False, action="store_true")
+parser.add_option("", "--cumulative", default=False, action="store_true")
+
 parser.add_option("-u", "--unsafe", default=False, type="string", help="a list of unsafe channels. Only used to color the plot. We require an exact match for channel to be flagged")
 
 parser.add_option("-o", "--output-dir", default=".", type="string")
@@ -115,14 +117,20 @@ if opts.plot:
     fig = plt.figure()
     ax = plt.subplot(1,1,1)
 
-    nbins = (len(pvalues) + len(unsafes))/8 ### could produce poor binning...
+    nbins = (len(pvalues) + len(unsafes))/20 ### could produce poor binning...
 
-    this_min = np.min(pvalues)
+    this_min = np.min([_ for _ in pvalues if _ > 0])
     if unsafes:
-        this_min = min(this_min, np.min(unsafes))
+        this_min = min(this_min, np.min([_ for _ in unsafes if _ > 0]))
     
     bins = np.logspace( np.log10(this_min), 0, nbins)
-    ax.hist( [pvalues, unsafes], bins=bins, histtype="barstacked", color=['g', 'r'], label=['safe', 'unsafe'], log=False)
+    if opts.cumulative:
+        if len(pvalues):
+            ax.hist( pvalues, bins=bins, histtype="step", color='g', label='safe', log=False, cumulative=opts.cumulative, weights=np.ones(len(pvalues), dtype=float)/len(pvalues))
+        if len(unsafes):
+            ax.hist( unsafes, bins=bins, histtype="step", color='r', label='unsafe', log=False, cumulative=opts.cumulative, weights=np.ones(len(unsafes), dtype=float)/len(unsafes) )
+    else:
+        ax.hist( [pvalues, unsafes], bins=bins, histtype="barstacked", color=['g', 'r'], label=['safe', 'unsafe'], log=False )
 
     ax.set_xlabel('min{pvalue}')
     ax.set_ylabel('count')
@@ -131,6 +139,9 @@ if opts.plot:
 
     ax.grid(True, which="both")
     ax.legend(loc='best')
+
+    if opts.cumulative:
+        ax.set_ylim(ymax=1 )
 
     ax.plot( [opts.pvalue]*2, plt.gca().get_ylim(), 'k--', linewidth=2 )
 

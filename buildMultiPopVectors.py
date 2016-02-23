@@ -47,7 +47,7 @@ else:
     outfile = sys.stdout
     errfile = sys.stderr
 
-print >> outfile, " ".join(channels)
+print >> outfile, "filename " + " ".join(channels)
 
 ### read in pointy.out files and store relevant pvalues
 for pointy in args:
@@ -78,7 +78,7 @@ for pointy in args:
     if opts.verbose:
         print "    found %d non-zero significances"%(np.sum(vect>0))
 
-    print >> outfile, " ".join("%.9e"%_ for _ in vect)
+    print >> outfile, pointy+" "+" ".join("%.9e"%_ for _ in vect)
 
 if opts.output_filename:
     outfile.close()

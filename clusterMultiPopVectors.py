@@ -7,6 +7,8 @@ import numpy as np
 
 from scipy import cluster
 
+from collections import defaultdict
+
 from optparse import OptionParser
 
 #-------------------------------------------------
@@ -22,7 +24,7 @@ parser.add_option("", "--kmeans-thr", default=1e-5, type="float", help="the thre
 opts, args = parser.parse_args()
 
 if len(args)!=1:
-    raise ValueError("Please supply exactly one input argument\n%s"%(usage))
+    raise ValueError("Please supply either one or two input arguments\n%s"%(usage))
 vectors = args[0]
 
 #-------------------------------------------------
@@ -32,19 +34,23 @@ if opts.verbose:
 
 ### extract headers
 file_obj = open(vectors, "r")
-chans = file_obj.readline().strip().split()
-file_obj.close()
+chans = file_obj.readline().strip().split()[1:] ### skip first column because that is the filename
 Nchans = len(chans)
 if opts.verbose:
     print "    found %d channels"%(Nchans)
 
 ### load vectors
-vects = np.loadtxt(vectors, skiprows=1, dtype=float)
-shape = np.shape(vects)
-if shape[0] != Nchans:
-    raise ValueError("inconsistent data format in : %s"%(vectors))
+vects = []
+names = []
+for line in file_obj:
+    line = line.strip().split()
+    if len(line) != Nchans+1:
+        raise ValueError("inconsistent data format in : %s"%(vectors))
+    vects.append( [float(_) for _ in line[1:]] ) 
+    names.append( line[0] )
+vects = np.array(vects)
 if opts.verbose:
-    print "    found %d samples"%(shape[1])
+    print "    found %d samples"%(len(vects))
 
 #-------------------------------------------------
 
@@ -56,9 +62,27 @@ codebook, distortion = cluster.vq.kmeans( vects, opts.kmeans_k, iter=opts.kmeans
 #-------------------------------------------------
 
 ### present results!
+print "distortion = %.6e\n"%(distortion)
+
+for ind, codeword in enumerate(codebook):
+    print "codeword : %d"%(i)
+    for i in np.nonzero(codeword)[0]:
+        print "    %.6e  %s"%(codeword[i], chans[i])
+
+### print associations between filenames and codewords
+associations = defaultdict( list )
+for filename, codeword in zip(names, cluster.vq.vq(vects, codebook)):
+    associations[codeword].append( filename )
+    
+print "\nAssociations\n"
+for codeword in xrange(opts.kmeans_k):
+    print "codeword : %d"%(codeword)
+    for filename in associations[codeword]:
+        print "    %s"%(filename)
+
+#-------------------------------------------------
+    
 '''
-this should return you a set of centroids for the cluster, which you'll then need to report somehow...
-    report the non-zero (or non-trivial) dimensions of each vector?
-    have this automatically define OmegaScan config files for each different cluster?
-        -> need to associate rows with clusters and then define OmegaScan jobs based on gps times (require these as an input list?)
+have this automatically define OmegaScan config files for each different cluster?
+    -> need to associate rows with clusters and then define OmegaScan jobs based on gps times (require these as an input list?)
 '''

@@ -33,7 +33,7 @@ file_obj.close()
 N = len(channels)
 if opts.verbose:
     print "    identified %d channels"%(N)
-indmap = dict( (chan, i) for i, chan in enumerate(chans) )
+indmap = dict( (chan, i) for i, chan in enumerate(channels) )
 
 #-------------------------------------------------
 ### write to file
@@ -41,17 +41,21 @@ if opts.output_filename:
     if opts.verbose:
         print "writing vectors into : %s"%(opts.output_filename)
     outfile = open(opts.output_filename, "w")
+    errfile = open(opts.output_filename+".trgs", "w")
 else:
     import sys
     outfile = sys.stdout
+    errfile = sys.stderr
 
 print >> outfile, " ".join(channels)
 
 ### read in pointy.out files and store relevant pvalues
-for ind, pointy in enumerate(args):
+for pointy in args:
     vect = np.zeros((N,), dtype=float)
     if opts.verbose:
         print "processing : %s"%(pointy)
+
+    print >> errfile, pointy
 
     file_obj = open(pointy, "r")
     lines = file_obj.readlines()
@@ -65,11 +69,16 @@ for ind, pointy in enumerate(args):
             nind = ind + 4
             if "pvalue" not in lines[nind]:
                 nind += 4
-            vect[indmap[chan]] = -np.log10( float(lines[nind].strip().split("=")[-1]) )
+            if indmap.has_key(chan): ### only add a channel if it is in the selected set
+                vect[indmap[chan]] = -np.log10( float(lines[nind].strip().split("=")[-1]) )
             ind = ind
         ind += 1
+
+    if opts.verbose:
+        print "    found %d non-zero significances"%(np.sum(vect>0))
 
     print >> outfile, " ".join("%.9e"%_ for _ in vect)
 
 if opts.output_filename:
     outfile.close()
+    errfile.close()

@@ -98,11 +98,13 @@ if opts.normD:
     norms = norms[(norms>0)*(norms<np.infty)]
     norms = np.log10(norms)
 
-    bins = np.linspace(np.min(norms), np.max(norms), max(10, len(norms)/2))
+    bins = np.linspace(np.min(norms), np.max(norms), max(10, len(norms)))
 
     ax.hist( norms, bins=bins, histtype="step", log=True, cumulative=-1 )
 
-    ax.set_ylabel( 'count' )
+    ax.plot( [np.log10(opts.normThr)]*2, ax.get_ylim(), 'k--')
+
+    ax.set_ylabel( 'cumulative count' )
     ax.set_xlabel( '$\log_{10} \left(-\sum \log p_i \sim -\log p_\mathrm{joint}\\right)$' )
 
     ax.grid(True, which="both")
@@ -119,16 +121,30 @@ if opts.hammingD:
     if opts.verbose:
         print "plotting histogram of hamming distances"
 
-    raise StandardError("--hammingD not yet implemented")
-
     fig = plt.figure()
     ax = fig.gca()
 
-   
+    hamms = np.sum((vects > 0).astype(int), axis=1)
+    truth = hamms >= opts.hammingThr
+    print "%d interesting times with hamming>=%d"%(np.sum(truth), opts.hammingThr)
+    for i in np.nonzero( truth )[0]:
+        print "    "+names[i]
+
+    bins = np.linspace(np.min(hamms), np.max(hamms), max(10, len(hamms)))
+
+    ax.hist( hamms, bins=bins, histtype="step", log=True, cumulative=-1 )
+
+    ax.plot( [opts.hammingThr]*2, ax.get_ylim(), 'k--')
+
+    ax.set_ylabel( 'cumulative count' )
+    ax.set_xlabel( 'hamming distance' )
+
+    ax.grid(True, which="both")
+
+    ax.set_xscale('log')
 
     figname = "%s/hammingHist%s.png"%(opts.output_dir, opts.tag)
     if opts.verbose:
         print "saving : %s"%(figname)
     fig.savefig( figname )
     plt.close( fig )
-

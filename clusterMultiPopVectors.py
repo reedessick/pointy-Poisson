@@ -52,6 +52,9 @@ vects = np.array(vects)
 if opts.verbose:
     print "    found %d samples"%(len(vects))
 
+if len(vects) < opts.kmeans_k:
+    raise ValueError("kmeans_k > len(vects) => you *will* have empty clusters")
+
 #-------------------------------------------------
 
 ### perform kmeans decomposition

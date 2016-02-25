@@ -25,8 +25,8 @@ parser.add_option("", "--twoD", default=False, action="store_true", help="plot 2
 parser.add_option("", "--normD", default=False, action="store_true", help="plot histogram of the L2 norms of the vectors")
 parser.add_option("", "--normThr", default=1e2, type="float", help="print the filenames of vectors associated with norms larger than --normThr. Must be used with --normD to have any effect")
 
-parser.add_option("", "--hammingD", default=False, action+"store_true", help="plot histogram of the hamming distance of vectors's participation")
-parser.add_optoin("", "--hammingThr", default=3, type="int", help-"print hte filenames of vectors associated with hamming distancances larger than --hammingThr. Must be used with --hammingD to have an effect")
+parser.add_option("", "--hammingD", default=False, action="store_true", help="plot histogram of the hamming distance of vectors's participation")
+parser.add_option("", "--hammingThr", default=3, type="int", help="print hte filenames of vectors associated with hamming distancances larger than --hammingThr. Must be used with --hammingD to have an effect")
 
 parser.add_option("-o", "--output-dir", default=".", type="string")
 parser.add_option("-t", "--tag", default="", type="string")

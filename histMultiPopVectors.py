@@ -8,6 +8,7 @@ import numpy as np
 import matplotlib
 matplotlib.use("Agg")
 from matplotlib import pyplot as plt
+plt.rcParams['text.usetex'] = True
 
 from optparse import OptionParser
 
@@ -18,8 +19,14 @@ parser = OptionParser(usage=usage, description=description)
 parser.add_option("-v", "--verbose", default=False, action="store_true")
 
 parser.add_option("", "--oneD", default=False, action="store_true", help="plot 1D histograms")
+
 parser.add_option("", "--twoD", default=False, action="store_true", help="plot 2D histograms")
+
 parser.add_option("", "--normD", default=False, action="store_true", help="plot histogram of the L2 norms of the vectors")
+parser.add_option("", "--normThr", default=1e2, type="float", help="print the filenames of vectors associated with norms larger than --normThr. Must be used with --normD to have any effect")
+
+parser.add_option("", "--hammingD", default=False, action+"store_true", help="plot histogram of the hamming distance of vectors's participation")
+parser.add_optoin("", "--hammingThr", default=3, type="int", help-"print hte filenames of vectors associated with hamming distancances larger than --hammingThr. Must be used with --hammingD to have an effect")
 
 parser.add_option("-o", "--output-dir", default=".", type="string")
 parser.add_option("-t", "--tag", default="", type="string")
@@ -81,12 +88,45 @@ if opts.normD:
 
     norms = np.sum(vects**2, axis=1)
 
-    ax.hist( norms, bins=max(10, len(norms)/10), histtype="step" )
+    ### prting intersting times with big norms
+    truth = norms >= opts.normThr
+    print "%d interesting times with norm>=%.2e"%(np.sum(truth), opts.normThr)
+    for i in np.nonzero( truth )[0]:
+        print "    "+names[i]
+
+    ### manipulate for plotting
+    norms = norms[(norms>0)*(norms<np.infty)]
+    norms = np.log10(norms)
+
+    bins = np.linspace(np.min(norms), np.max(norms), max(10, len(norms)/2))
+
+    ax.hist( norms, bins=bins, histtype="step", log=True, cumulative=-1 )
 
     ax.set_ylabel( 'count' )
-    ax.set_xlabel( '$\sum \log p_i$ \sim \log p_\mathrm{joint}$' )
+    ax.set_xlabel( '$\log_{10} \left(-\sum \log p_i \sim -\log p_\mathrm{joint}\\right)$' )
+
+    ax.grid(True, which="both")
 
     figname = "%s/normHist%s.png"%(opts.output_dir, opts.tag)
+    if opts.verbose:
+        print "saving : %s"%(figname)
+    fig.savefig( figname )
+    plt.close( fig )
+
+
+### make hamming distance histograms
+if opts.hammingD:
+    if opts.verbose:
+        print "plotting histogram of hamming distances"
+
+    raise StandardError("--hammingD not yet implemented")
+
+    fig = plt.figure()
+    ax = fig.gca()
+
+   
+
+    figname = "%s/hammingHist%s.png"%(opts.output_dir, opts.tag)
     if opts.verbose:
         print "saving : %s"%(figname)
     fig.savefig( figname )

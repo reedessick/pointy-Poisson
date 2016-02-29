@@ -23,6 +23,11 @@ parser.add_option("", "--gwchan", default="H1:CAL-DELTAL_EXTERNAL_DQ", type="str
 
 parser.add_option("", "--output-dir", default=".", type="string")
 
+parser.add_option("", "--condor", default=False, action="store_true", help="write a condor_sub file instead of a shell script")
+parser.add_option("", "--accounting-group", default="ligo.dev.o2.detchar.explore.test", type="string")
+parser.add_option("", "--accounting-group-user", default="reed.essick", type="string")
+parser.add_option("", "--request-memory", default=2000000, type="int", help="measured in kB")
+
 opts, args = parser.parse_args()
 
 if len(args)!=1:
@@ -105,8 +110,24 @@ template = """{
   alwaysPlotFlag:              1
 }"""%('%s', opts.frame_type, '%s', opts.timeRange)
 
-cmd_file = "%s/run_Qscan.sh"%(opts.output_dir)
-cmd_obj = open(cmd_file, "w")
+if opts.condor:
+    cmd_file = "%s/run_Qscan.sub"%(opts.output_dir)
+    cmd_obj = open(cmd_file, "w")
+    print >> cmd_obj, """universe = vanilla
+executable = /home/omega/opt/omega/bin/wpipeline
+getenv = True
+accounting_group = %s
+accounting_group_user = %s
+log = %s/Qscan.log
+error = %s/Qscan-$(cluster)-$(process).err
+output = %s/Qscan-$(cluster)-$(process).out
+request_memory = %d KB
+notification = never"""%(opts.accounting_group, opts.accounting_group_user, opts.output_dir, opts.output_dir, opts.output_dir, opts.request_memory)
+
+else:
+    cmd_file = "%s/run_Qscan.sh"%(opts.output_dir)
+    cmd_obj = open(cmd_file, "w")
+
 file_obj = open(vectors, "r")
 file_obj.readline()
 for line in file_obj:
@@ -129,7 +150,7 @@ for line in file_obj:
     if not os.path.exists(outdir):
         os.makedirs(outdir)
 
-    conf_file = "%s/Oscan.cnf"%(outdir)
+    conf_file = "%s/Qscan.cnf"%(outdir)
     if opts.verbose:
         print "        "+conf_file
     conf_obj = open(conf_file, "w")
@@ -152,8 +173,14 @@ for line in file_obj:
     that_cmd = os_cmd%(gps, conf_file, outdir, directory)
     if opts.verbose:
         print "        "+that_cmd
-    print >> cmd_obj, that_cmd
+    if opts.condor:
+        print >> cmd_obj, "arguments = \" %s \"\nqueue 1"%(" ".join(that_cmd.split()[1:]))
+    else:
+        print >> cmd_obj, that_cmd
 
 cmd_obj.close()
 if opts.verbose:
-    print "now run :\n%s"%(cmd_file)
+    if opts.condor:
+        print "now run :\ncondor_submit %s"%(cmd_file)
+    else:
+        print "now run :\n%s"%(cmd_file)

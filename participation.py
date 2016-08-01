@@ -141,7 +141,7 @@ if opts.plot:
         if len(unsafes):
             ax.hist( unsafes, bins=bins, histtype="step", color='r', label='unsafe', log=False, cumulative=opts.cumulative, weights=np.ones(len(unsafes), dtype=float)/len(unsafes) )
     else:
-        ax.hist( [pvalues, unsafes], bins=bins, histtype="barstacked", color=['g', 'r'], label=['safe', 'unsafe'], log=False )
+        ax.hist( [unsafes, pvalues], bins=bins, histtype="barstacked", color=['r', 'g'], label=['unsafe', 'safe'], log=False )
 
     ax.set_xlabel('min{pvalue}')
     ax.set_ylabel('count')

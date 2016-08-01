@@ -3,6 +3,7 @@ usage = "python defineUnsafe.py [--options] pointy.out pointy.out pointy.out ...
 description = "stacks pvalues to determine safety"
 author = "Reed Essick (reed.essick@ligo.org)"
 
+import os
 import glob
 import numpy as np
 from collections import defaultdict
@@ -35,7 +36,7 @@ parser.add_option("", "--exactMatch-unsafe", default=False, action="store_true",
 
 parser.add_option("", "--single-population", default=False, action="store_true", help="when averaging, we assume there is a single population of events and use N=len(args) instead of just the number of times the channel actually showed up")
 
-parser.add_option("", "--sngltime-pvalue", default=0.0, type="float")
+parser.add_option("", "--sngltime-pvalue", default=0.0, type="float", help="write out all the pvalues for each channel that are below --sngltime-pvalue" )
 
 parser.add_option("", "--cumulative", default=False, action="store_true")
 
@@ -45,6 +46,9 @@ if opts.tag:
     opts.tag = "_%s"%(opts.tag)
 if opts.single_population:
     opts.tag = "_snglPop%s"%(opts.tag)
+
+if not os.path.exists(opts.output_dir):
+    os.makedirs(opts.output_dir)
 
 nargs = len(args)
 if not nargs:

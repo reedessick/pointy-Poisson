@@ -3,6 +3,8 @@
 usage = """signifScat.py [--options] gps gps gps..."""
 description="""a script that generates scatter plots of KW signif amplitudes"""
 
+import os
+
 import matplotlib
 matplotlib.use("Agg")
 from matplotlib import pyplot as plt
@@ -35,7 +37,7 @@ parser.add_option("-t", "--tag", default="", type="string")
 
 parser.add_option("-f", "--force", default=False, action="store_true", help="continue on past times with no coverage")
 
-parser.add_option("", "--pairs", default=[], action="append", type="string", help="eg: H1:CAL-DELTAL_EXTERNAL_OUT_DQ,H1:ASC-AS_B_RF36_Q_YAW_OUT_DQ")
+parser.add_option("", "--pairs", default=[], action="append", type="string", help="eg: H1_CAL-DELTAL_EXTERNAL_OUT_DQ_32_2048,H1_ASC-AS_B_RF36_Q_YAW_OUT_DQ_32_2048")
 
 opts, args = parser.parse_args()
 
@@ -50,7 +52,10 @@ else:
 if opts.tag:
     opts.tag = "_"+opts.tag
 
-opts,pairs = [pair.split(",") for pair in opts.pairs]
+opts.pairs = [pair.split(",") for pair in opts.pairs]
+
+if not os.path.exists(opts.output_dir):
+    os.makedirs( opts.output_dir )
 
 #=================================================
 
@@ -135,4 +140,33 @@ for chanA, chanB in opts.pairs:
     if opts.verbose:
         print "    %s\n    %s"%(chanA, chanB)
 
+    ### extract data
+    x = []
+    y = []
+    for gps in args:    
+        trgdict = trgdata[gps][1]
+        if trgdict.has_key(chanA) and trgdict.has_key(chanB):
+            for trg in trgdict[chanA]:
+                for TRG in trgdict[chanB]:
+                    x.append( trg[event.col_kw['signif']] )
+                    y.append( TRG[event.col_kw['signif']] )
 
+    ### plot features
+    fig = plt.figure()
+    ax = fig.gca()
+
+    ax.plot( x, y, marker='o', markerfacecolor='none', linestyle='none' )
+
+    ax.set_xlabel( chanA.replace("_","\_")+" signif" )
+    ax.set_ylabel( chanB.replace("_","\_")+" signif" )
+
+    ax.grid(True, which="both")
+
+    ax.set_xscale('log')
+    ax.set_yscale('log')
+
+    figname = "%s/signif_%s-%s%s.png"%(opts.output_dir, chanA, chanB, opts.tag)
+    if opts.verbose:
+        print "    %s"%(figname)
+    fig.savefig( figname )
+    plt.close(fig)

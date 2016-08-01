@@ -18,9 +18,9 @@ parser = OptionParser(usage=usage, description=description)
 
 parser.add_option("-v", "--verbose", default=False, action="store_true")
 
-parser.add_option("", "--oneD", default=False, action="store_true", help="plot 1D histograms")
+parser.add_option("", "--oneD", default=False, action="store_true", help="plot 1D histograms of each feature")
 
-parser.add_option("", "--twoD", default=False, action="store_true", help="plot 2D histograms")
+parser.add_option("", "--twoD", default=False, action="store_true", help="plot 2D histograms of all pairs of features")
 
 parser.add_option("", "--normD", default=False, action="store_true", help="plot histogram of the L2 norms of the vectors")
 parser.add_option("", "--normThr", default=1e2, type="float", help="print the filenames of vectors associated with norms larger than --normThr. Must be used with --normD to have any effect")
@@ -100,11 +100,13 @@ if opts.normD:
 
     bins = np.linspace(np.min(norms), np.max(norms), max(10, len(norms)))
 
-    ax.hist( norms, bins=bins, histtype="step", log=True, cumulative=-1 )
+    n, _, _ = ax.hist( norms, bins=bins, histtype="step", log=True, cumulative=-1, weights=np.ones(len(norms),dtype=float)/len(norms) )
+
+    ax.set_ylim(ymin=min(n)*0.95, ymax=1)
 
     ax.plot( [np.log10(opts.normThr)]*2, ax.get_ylim(), 'k--')
 
-    ax.set_ylabel( 'cumulative count' )
+    ax.set_ylabel( 'cumulative fraction of events' )
     ax.set_xlabel( '$\log_{10} \left(-\sum \log p_i \sim -\log p_\mathrm{joint}\\right)$' )
 
     ax.grid(True, which="both")
@@ -132,11 +134,13 @@ if opts.hammingD:
 
     bins = np.linspace(np.min(hamms), np.max(hamms), max(10, len(hamms)))
 
-    ax.hist( hamms, bins=bins, histtype="step", log=True, cumulative=-1 )
+    n, _, _ = ax.hist( hamms, bins=bins, histtype="step", log=True, cumulative=-1, weights=np.ones(len(hamms),dtype=float)/len(hamms) )
+
+    ax.set_ylim(ymin=min(n)*0.95, ymax=1)
 
     ax.plot( [opts.hammingThr]*2, ax.get_ylim(), 'k--')
 
-    ax.set_ylabel( 'cumulative count' )
+    ax.set_ylabel( 'cumulative fraction of events' )
     ax.set_xlabel( 'hamming distance' )
 
     ax.grid(True, which="both")

@@ -3,6 +3,12 @@ usage = "pointy2OmegaScan.py [--options] gps,pointy.out gps,pointy.out ..."
 description = "builds an OmegaScan config file based off the channels with pvalues below --pvalueThr"
 author = "reed.essick@ligo.org"
 
+#-------------------------------------------------
+
+import os
+
+import subprocess as sp
+
 import numpy as np
 
 from optparse import OptionParser
@@ -37,7 +43,7 @@ pointys = []
 gps = []
 for arg in args:
     g, p = arg.split(',')
-    point.append( p )
+    pointys.append( p )
     gps.append( float(g) )
 
 if opts.freq_map==None:
@@ -119,7 +125,7 @@ for t, pointy in zip(gps, pointys):
     if opts.verbose:
         print "writing Qscan config files for: %d -> %s"%(t, pointy)
 
-    outdir = "%s/%.6f"%(opts.output_dir, gps)
+    outdir = "%s/%.6f"%(opts.output_dir, t)
     if not os.path.exists(outdir):
         os.makedirs(outdir)
 
@@ -148,7 +154,7 @@ for t, pointy in zip(gps, pointys):
         ind += 1
 
     if opts.verbose:
-        print "    found %d relevant KW channels"%(len(chas))
+        print "    found %d relevant KW channels"%(len(chans))
 
     ### convert to raw channel names
     channels = set()
@@ -162,8 +168,6 @@ for t, pointy in zip(gps, pointys):
 
     ### set up channel frequency stuff
     channels = dict( (chan, freq_map[chan]) for chan in channels )
-
-    raise NotImplementedError("WRITE ACTUAL CONFIG FILE")
 
     ### write config file
     conf_file = "%s/Qscan.cnf"%(outdir)
@@ -180,13 +184,13 @@ for t, pointy in zip(gps, pointys):
     conf_obj.close()
 
     ### set up command
-    this_cmd = gwdf_cmd%(int(gps), int(gps)+1)
+    this_cmd = gwdf_cmd%(int(t), int(t)+1)
     if opts.verbose:
         print "        "+this_cmd
     frame = sp.Popen( this_cmd.split(), stdout=sp.PIPE).communicate()[0].split()[0]
     directory = os.path.dirname( frame.replace("file://localhost","") )
 
-    that_cmd = os_cmd%(gps, conf_file, outdir, directory)
+    that_cmd = os_cmd%(t, conf_file, outdir, directory)
     if opts.verbose:
         print "        "+that_cmd
     if opts.condor:

@@ -18,7 +18,10 @@ parser.add_option("-v", "--verbose", default=False, action="store_true")
 parser.add_option("-p", "--pvalue", default=1, type="float", help="the pvalue threshold used to define participation")
 
 parser.add_option("-P", "--plot", default=False, action="store_true")
+parser.add_option("", "--loglog", default=False, action="store_true", help="makes pvalue plots log-log instead of semilogx and converts histtype to step instead of barstacked")
 parser.add_option("", "--cumulative", default=False, action="store_true")
+
+parser.add_option("", "--nperbin", default=10, type='int')
 
 parser.add_option("-u", "--unsafe", default=False, type="string", help="a list of unsafe channels. Only used to color the plot. We require an exact match for channel to be flagged")
 parser.add_option("", "--exactMatch-unsafe", default=False, action="store_true", help="require an exact match for channel names when determining safety. If not supplied, we assume KW channel name format and convert back to \"raw\" channel names to perform matching")
@@ -128,7 +131,7 @@ if opts.plot:
     fig = plt.figure()
     ax = plt.subplot(1,1,1)
 
-    nbins = (len(pvalues) + len(unsafes))/20 ### could produce poor binning...
+    nbins = (len(pvalues) + len(unsafes))/opts.nperbin ### could produce poor binning...
 
     this_min = np.min([_ for _ in pvalues if _ > 0])
     if unsafes:
@@ -141,7 +144,20 @@ if opts.plot:
         if len(unsafes):
             ax.hist( unsafes, bins=bins, histtype="step", color='r', label='unsafe', log=False, cumulative=opts.cumulative, weights=np.ones(len(unsafes), dtype=float)/len(unsafes) )
     else:
-        ax.hist( [unsafes, pvalues], bins=bins, histtype="barstacked", color=['r', 'g'], label=['unsafe', 'safe'], log=False )
+        if opts.loglog:
+            ymax = -np.infty
+            ymin = np.infty
+            if unsafes:
+                n, _, _ = ax.hist( unsafes, bins=bins, histtype="step", color='r', label='unsafe', log=True )
+                ymax = max(ymax, max(n))
+                ymin = min(ymin, min([_ for _ in n if _]))
+            if pvalues:
+                n, _, _ = ax.hist( pvalues, bins=bins, histtype="step", color='g', label='safe', log=True )
+                ymax = max(ymax, max(n))
+                ymin = min(ymin, min([_ for _ in n if _]))
+            ax.set_ylim(ymin=0.95*ymin, ymax=1.05*ymax)
+        else:
+            ax.hist( [unsafes, pvalues], bins=bins, histtype="barstacked", color=['r', 'g'], label=['unsafe', 'safe'], log=False )
 
     ax.set_xlabel('min{pvalue}')
     ax.set_ylabel('count')

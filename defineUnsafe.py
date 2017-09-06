@@ -5,6 +5,8 @@ author = "Reed Essick (reed.essick@ligo.org)"
 
 import os
 import glob
+import pickle
+
 import numpy as np
 from collections import defaultdict
 
@@ -26,6 +28,7 @@ parser.add_option("-t", "--tag", default="", type="string")
 parser.add_option("-n", "--nperbin", default=8, type="int")
 
 parser.add_option("", "--xmin", default=None, type="float")
+parser.add_option("", "--ymin", default=None, type="float")
 
 parser.add_option("", "--snglchan-histograms", default=False, action="store_true")
 
@@ -108,7 +111,7 @@ if opts.snglchan_histograms:
         ax = fig.gca()
 
         n = len(pvalues)
-        ax.hist( pvalues, histtype='step', cumulative=opts.cumulative, normed=opts.cumulative )
+        count, bins, patches = ax.hist( pvalues, histtype='step', cumulative=opts.cumulative, normed=opts.cumulative )
 
         ax.plot( [np.sum(pvalues/Ntrials)]*2, ax.get_ylim(), 'k-', linewidth=2, alpha=0.5 )
 
@@ -258,10 +261,21 @@ if opts.plot:
 
     bins = np.logspace( np.log10(this_min), 0, nbins)
 #    ax.hist( pvalues, bins=bins, histtype="bar", color='g', log=True )
+
+    count, _, _ = ax.hist( pvalues, bins=bins, histtype="step", color='g', label='safe', log=True, cumulative=opts.cumulative, normed=opts.cumulative )
+    if opts.cumulative: ### plot error bars
+        count = np.array(count)
+        s = (count*(1.-count)/len(pvalues))**0.5
+        for c, s, bs, be in zip(count, s, bins[:-1], bins[1:]):
+            ax.fill_between([bs, be], [c-s]*2, [c+s]*2, color='g', alpha=0.25, edgecolor='none')
+
     if unsafes:
-        ax.hist( [pvalues, unsafes], bins=bins, histtype="step", color=['g', 'r'], label=['safe', 'unsafe'], log=True, cumulative=opts.cumulative, normed=opts.cumulative )
-    else:
-        ax.hist( [pvalues], bins=bins, histtype="step", color=['g'], label=['safe'], log=True, cumulative=opts.cumulative, normed=opts.cumulative )
+        count, _, _ = ax.hist( unsafes, bins=bins, histtype="step", color='r', label='unsafe', log=True, cumulative=opts.cumulative, normed=opts.cumulative )
+        if opts.cumulative: ### plot error bars
+            count = np.array(count)
+            s = (count*(1.-count)/len(unsafes))**0.5
+            for c, s, bs, be in zip(count, s, bins[:-1], bins[1:]):
+                ax.fill_between([bs, be], [c-s]*2, [c+s]*2, color='r', alpha=0.25, edgecolor='none')
 
     if opts.single_population:
         ax.set_xlabel('$\Pi_i\mathrm{pvalue}_i^{1/%d}$'%(Ntrials))
@@ -283,11 +297,26 @@ if opts.plot:
     if opts.xmin!=None:
         ax.set_xlim(xmin=opts.xmin)
     ax.set_xlim(xmax=1.0)
-    if not opts.cumulative:
+
+    if opts.ymin!=None:
+        ax.set_ylim(ymin=opts.ymin)
+
+    elif not opts.cumulative:
         ax.set_ylim(ymin=0.5)
+    
+    if opts.cumulative:
+        ax.set_ylim(ymax=1.0)
 
     figname = "%s/stacked-pvalue%s.png"%(opts.output_dir, opts.tag)
     if opts.verbose:
         print "\t%s"%(figname)
     fig.savefig(figname)
     plt.close(fig)
+
+    ### write pvalues into a pkl file so I can access them later!
+    filename = figname.replace('.png','.pkl')
+    if opts.verbose:
+        print "\t%s"%(filename)
+    file_obj = open(filename, 'w')
+    pickle.dump((pvalues, unsafes), file_obj)
+    file_obj.close()

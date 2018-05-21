@@ -1,0 +1,132 @@
+#!/usr/bin/env python
+
+__usage__ = "naive_bayes [--options] pointy.out pointy.out ..."
+__description__ = "generate naive bayes ranking statistics for each of a set of pointy.out results and plot the distribution"
+__author__ = "Reed Essick (reed.essick)"
+
+#-------------------------------------------------
+
+from collections import defaultdict
+
+import numpy as np
+
+import matplotlib
+matplotlib.use("Agg")
+from matplotlib import pyplot as plt
+plt.rcParams['text.usetex'] = True
+
+from optparse import OptionParser
+
+#-------------------------------------------------
+
+parser = OptionParser(usage=__usage__, description=__description__)
+
+parser.add_option('-v', '--verbose', default=False, action='store_true')
+
+parser.add_option('', '--exclude', default=[], type='string', action='append',
+    help='exclude these KW channel names from the analysis')
+
+parser.add_option('', '--annotation', default=None, type='string',
+    help='path to pointy.out for annotation')
+
+parser.add_option('', '--plot', default=False, action='store_true')
+
+parser.add_option('-o', '--output-dir', default='.', type='string')
+parser.add_option('-t', '--tag', default='', type='string')
+
+opts, args = parser.parse_args()
+assert len(args), 'please supply at least 1 input argument\n%s'%__usage__
+
+if opts.tag:
+    opts.tag = "_"+opts.tag
+
+#-------------------------------------------------
+
+### read in data from disk
+
+log_pvalues = []
+for out in args:
+    if opts.verbose:
+        print( "reading : "+out )
+    out_obj = open(out, 'r')
+
+    log_pvalue = 0.0
+
+    line = out_obj.readline()
+    while line:
+        if "channel" in line:
+            chan = line.strip().split("=")[-1]
+            if chan not in opts.exclude: ### skip bad channels
+                for _ in xrange(8):
+                    line = out_obj.readline() ### skip down to the interesting one
+                log_pvalue += np.log10(float( line.strip().split('=')[1] ))
+
+        line = out_obj.readline()
+    out_obj.close()
+
+    if opts.verbose:
+        print( "    SUM[log(pvalue)] = %.3f"%log_pvalue )
+
+    log_pvalues.append( log_pvalue )
+
+#---
+
+if opts.annotation!=None: ### read in data from annotation
+    if opts.verbose:
+        print( "reading annotation : "+opts.annotation )
+    out_obj = open(opts.annotation, 'r')
+
+    opts.annotation = 0.0
+    line = out_obj.readline()
+    while line:
+        if "channel" in line:
+            for _ in xrange(8):
+                line = out_obj.readline() ### skip down to the interesting one
+            opts.annotation += np.log10(float( line.strip().split('=')[1] ))
+
+        line = out_obj.readline()
+    out_obj.close()
+
+    if opts.verbose:
+        print( "    log(pvalue) = %.3f"%opts.annotation )
+
+#------------------------
+
+### plot
+if opts.plot:
+    if opts.verbose:
+        print( "plotting..." )
+
+    fig = plt.figure()
+    ax = fig.gca()
+    AX = ax.twinx()
+
+    m = np.min(log_pvalues)
+    M = np.max(log_pvalues)
+
+    ax.hist(log_pvalues, bins=np.linspace(m, M, int(5*len(log_pvalues)**0.5)), color='b', histtype='step')
+    n, b, _ = AX.hist(log_pvalues, bins=np.linspace(m, M, 10*len(log_pvalues)), color='r', histtype='step', cumulative=1, normed=True)
+    for n, m, M in zip(n, b[:-1], b[1:]):
+        s = (n*(1-n)/len(log_pvalues))**0.5
+        AX.fill_between([m, M], [n-s]*2, [n+s]*2, color='r', alpha=0.25, edgecolor='none')
+
+    ax.set_xlabel('$\sum\limits_i \log_{10}(p_i)$')
+    ax.set_ylabel('count')
+    AX.set_ylabel('cumulative count')
+
+    AX.yaxis.tick_right()
+    AX.yaxis.set_label_position('right')
+
+    if opts.annotation != None:
+        AX.plot([opts.annotation]*2, range(2), 'k', linewidth=2)
+
+    AX.set_ylim(ymin=-0.01, ymax=1.01)
+
+    ax.set_xlim(xmax=np.max(log_pvalues))
+    AX.set_xlim(ax.get_xlim())
+
+    figname = "%s/naive_bayes%s.png"%(opts.output_dir, opts.tag)
+    if opts.verbose:
+        print( "    "+figname )
+    fig.savefig(figname)
+    plt.close(fig)

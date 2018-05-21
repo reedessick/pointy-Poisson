@@ -1,0 +1,152 @@
+#!/usr/bin/env python
+
+__usage__ = "naive_bayes_roc [--options] naive_bayes.npy"
+__description__ = """\
+compute an ROC curve from a naive_bayes classifier's timeseries"""
+__author__ = "Reed Essick (reed.essick@ligo.org)"
+
+#-------------------------------------------------
+
+import os
+
+import numpy as np
+
+import matplotlib
+matplotlib.use("Agg")
+from matplotlib import pyplot as plt
+plt.rcParams['text.usetex'] = True
+
+from optparse import OptionParser
+
+#-------------------------------------------------
+
+parser = OptionParser(usage=__usage__, description=__description__)
+
+parser.add_option('-v', '--verbose', default=False, action='store_true')
+
+parser.add_option('-c', '--channel', default=None, type='string', 
+    help='the KW channel name used as the h(t) proxy')
+parser.add_option('', '--signif-thr', default=[], type='float', action='append',
+    help='KW significane threshold used to estimate ROC curve. Can be repeated.')
+parser.add_option('', '--trg', default=[], type='string', action='append',
+    help='path to KWM.trg files. Can be repeated.')
+
+parser.add_option('', '--reference-gps', default=None, type='float')
+
+parser.add_option('-o', '--output-dir', default='.', type='string')
+parser.add_option('-t', '--tag', default='', type='string')
+
+opts, args = parser.parse_args()
+assert len(args)==1, "please supply exactly 1 input argument\n%s"%__usage__
+npy = args[0]
+
+opts.output_dir = os.path.abspath(opts.output_dir)
+if not os.path.exists(opts.output_dir):
+    os.makedirs(opts.output_dir)
+
+if opts.tag:
+    opts.tag = "_"+opts.tag
+
+if not opts.signif_thr:
+    opts.signif_thr.append( float(raw_input('--signif-thr=')) )
+opts.signif_thr.sort(reverse=True)
+
+if not opts.trg:
+    opts.trg.append( raw_input('--trg=') )
+
+#-------------------------------------------------
+
+if opts.verbose:
+    print( "loading naive classifier p-values : "+npy )
+lpvl = np.load(npy)
+start, dur = [int(_) for _ in npy[:-4].split('-')[-2:]]
+stop = start+dur
+N = len(lpvl)
+gps = np.arange(start, start+dur, 1.*dur/N)
+
+#-------------------------------------------------
+
+### read in triggers
+if opts.verbose:
+    print( "reading in triggers" )
+
+### NOTE: this may not be the most memory-efficient storage...
+trgs = dict((thr, []) for thr in opts.signif_thr) ### set up this KW channel 
+for trg_path in opts.trg:
+    obj = open(trg_path, 'r')
+    cols = obj.readline().strip()[1:].split() ### FIXME may be fragile...
+    toFloat = [_ for _ in cols if _!='channel']
+    for line in obj:
+        fields = dict(zip(cols, line.strip().split()))
+
+        if fields['channel'] == opts.channel:
+            time = float(fields['time'])
+            if (start <= time) and (time <=stop):
+                ### bin data by kwsignif_thr
+                signif = float(fields['significance'])
+                for thr in opts.signif_thr:
+                    if signif >= thr:
+                        trgs[thr].append( time ) ### add it only to one set
+                        break ### do not double count
+                else:
+                    pass ### only remember things that we'll count later on...
+                         ### because of the default list for opts.kwsignif_thr, we should retain everything, though
+
+    obj.close()
+    
+#-------------------------------------------------
+
+if opts.verbose:
+    print( "computing ROC curve" )
+order = lpvl.argsort()
+FAP = np.cumsum(np.ones_like(lpvl, dtype=float)[order])/len(lpvl)
+
+limmin=1e-4
+
+fig = plt.figure()
+ax = fig.gca()
+
+faircoin = np.logspace(-4, 0, 10001)
+ax.plot(faircoin, faircoin, 'k--', alpha=0.5)
+
+EFF = np.zeros_like(order, dtype=float)
+for thr in opts.signif_thr:
+    for t in trgs[thr]:
+        EFF += np.interp(t, gps, lpvl) <= lpvl[order]
+    N = EFF[-1]
+    eff = 1.*EFF/N
+
+    eff[eff <= limmin] = limmin ### fudge factor for plotting
+
+    s = (eff*(1-eff)/N)**0.5
+    color = ax.plot(FAP, eff, label='KW signif $\geq$ %d (%d events)'%(thr, N))[0].get_color()
+    ax.fill_between(FAP, eff+s, eff-s, color=color, edgecolor='none', alpha=0.1)
+
+if opts.reference_gps!=None: ### plot where the reference gps falls on the ROC curve
+    fap = np.interp(np.interp(opts.reference_gps, gps, lpvl), lpvl[order], FAP)
+    ax.plot([fap]*2, [1e-4, 1], 'k', linewidth=2)
+
+ax.set_xlabel('fractional deadtime')
+ax.set_ylabel('glitch detection efficiency')
+
+ax.grid(True, which='both')
+ax.legend(loc='best')
+
+ax.set_xlim(xmin=limmin)
+ax.set_ylim(ymin=limmin)
+
+figname = "%s/naive_bayes_roc%s.png"%(opts.output_dir, opts.tag)
+if opts.verbose:
+    print( "    "+figname )
+fig.savefig(figname)
+
+ax.set_xscale('log')
+ax.set_yscale('log')
+ax.set_xlim(xmin=limmin)
+ax.set_ylim(ymin=limmin)
+
+figname = "%s/naive_bayes_roc-log%s.png"%(opts.output_dir, opts.tag)
+if opts.verbose:
+    print( "    "+figname )
+fig.savefig(figname)
+plt.close(fig)

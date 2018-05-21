@@ -1,0 +1,368 @@
+#!/usr/bin/env python
+
+__usage__ = "naive_bayes_timeseries [--options] gpsstart gpsstop chanlist.txt"
+__description__ = """\
+generate a NaiveBayes classifier based on the channels in chanlist.txt and compute an assoicated timeseries within [gpsstart, gpsstop]. \
+We assume chanlist.txt is an ASCII file with each line containing a channel name and its sample rate, corresponding to the output format of FrChannels"""
+__author__ = "Reed Essick (reed.essick@ligo.org)"
+
+#-------------------------------------------------
+
+import os
+import glob
+
+import subprocess as sp
+
+import numpy as np
+
+import matplotlib
+matplotlib.use("Agg")
+from matplotlib import pyplot as plt
+plt.rcParams['text.usetex'] = True
+
+from optparse import OptionParser
+
+#-------------------------------------------------
+
+### this is a bit of a mess and should be defined in a single place, but I'm just copying it wholesale for now
+frqmap = {
+        65536.0:[(8,128), (32,2048), (1024,4096), (2048,8192)],
+        32768.0:[(8,128), (32,2048), (1024,4096), (2048,8192)],
+        16384.0:[(8,128), (32,2048), (1024,4096), (2048,8192)],
+         8192.0:[(8,128), (32,2048), (1024,4096), (2048,8192)],
+         4096.0:[(8,128), (32,2048), (1024,4096)],
+         2048.0:[(8,128), (32,2048)],
+         1024.0:[(8,128), (32,1024)],
+          512.0:[(8,128), (32,512)],
+          256.0:[(8,128), (32,256)],
+           16.0:[],
+        }
+
+KWconfig_header = """stride %.1f
+basename %s-KW_%s_TRIGGERS
+segname %s-KW_%s_SEGMENTS
+significance 15.0
+threshold 3.0
+decimateFactor -1"""
+
+#========================
+
+def chanlist2KWconfig( chanlist, observatory, tag="C", kwstride=32 ):
+    kwconfig = KWconfig_header%(kwstride, observatory, tag, observatory, tag)
+    for chan, freq in chanlist:
+        freq = int(freq)
+        for minF, maxF in frqmap[freq]:
+            kwconfig += "\nchannel %s %d %d"%(chan, minF, maxF)
+    return kwconfig
+
+#-------------------------------------------------
+
+parser = OptionParser(usage=__usage__, description=__description__)
+
+parser.add_option('-v', '--verbose', default=False, action='store_true')
+
+parser.add_option('', '--srate', default=64, type='float',
+    help='sample rate for things like p-value estimates, specified in Hz. \
+DEFAULT=64')
+parser.add_option('', '--window', default=1000, type='float',
+    help='the window used for rate estimates (gps+/-opts.window), specified in sec. \
+DEFAUL=1000')
+
+parser.add_option('', '--exclude', default=[], type='string', action='append',
+    help='an exact match for KW channel names that you want excluded')
+
+parser.add_option('', '--kwsignif-thr', default=[15.0], type='float', action='append',
+    help='the kwsignif threshold over which we maximize when computing pointy-Poisson statistic. \
+DEFAULT=[15.0]')
+
+parser.add_option('', '--skip-kwtrg-generation', default=False, action='store_true')
+parser.add_option('', '--kwstride', default=32, type='int', 
+    help='DEFAULT=32')
+parser.add_option('', '--frametype', default='L1_R', type='string', 
+    help='used for KW trigger generation and naming convention. \
+DEFAULT=L1_R')
+
+parser.add_option('', '--plot', default=False, action='store_true',
+    help='generate plots in addition to the npz files')
+parser.add_option('', '--plot-start-dur', nargs=2, default=[], type='float', action='append',
+    help='generate zoomed plots using this window. Can be repeated. \
+DEFAULT=[]')
+
+parser.add_option('', '--reference-gps', default=None, type='float')
+
+parser.add_option('-o', '--output-dir', default='.', type='string')
+parser.add_option('-t', '--tag', default='', type='string')
+
+opts, args = parser.parse_args()
+assert len(args)==3, "please supply exactly 3 input arguments\n%s"%__usage__
+gpsstart, gpsstop = [float(_) for _ in args[:2]]
+gpsdur = gpsstop - gpsstart
+
+chanlist_path = args[2]
+
+opts.plot_start_dur.insert(0, (gpsstart, gpsdur))
+
+opts.output_dir = os.path.abspath(opts.output_dir)
+if not os.path.exists(opts.output_dir):
+    os.makedirs(opts.output_dir)
+
+if opts.tag:
+    filetag = "_"+opts.tag
+else:
+    filetag = ""
+
+observatory = opts.frametype[0] ### FIXME: extraction of observatory from frame type may be fragile...
+
+cwd = os.getcwd()
+
+opts.kwsignif_thr.sort(reverse=True) ### order from largest to smallest
+
+if opts.verbose:
+    print( "reading channels from : "+chanlist_path )
+obj = open(chanlist_path, 'r')
+chanlist = [line.strip().split() for line in obj.readlines()]
+obj.close()
+
+#-------------------------------------------------
+
+###---------- TRIGGER GENERATION
+if not opts.skip_kwtrg_generation:
+    ### compute KW triggers for these channels
+    kwconfig_path = "%s/KW%s.cnf"%(opts.output_dir, filetag)
+    if opts.verbose:
+        print( "writing : "+kwconfig_path )
+    obj = open(kwconfig_path, 'w')
+    obj.write(chanlist2KWconfig( chanlist, observatory, tag=opts.tag, kwstride=opts.kwstride))
+    obj.close()
+
+    ### go grab data
+    inlist_path = "%s/frames%s.txt"%(opts.output_dir, filetag)
+    cmd = "gw_data_find -o %s --type %s -u file -s %d -e %d"%(observatory, opts.frametype, gpsstart-2*opts.kwstride, gpsstop+2*opts.kwstride) ### add some buffer to be safe
+
+    if opts.verbose:
+        print( "writing : "+inlist_path )
+        print( cmd )
+    obj = open(inlist_path, "w")
+    obj.write( sp.Popen(cmd.split(), stdout=sp.PIPE).communicate()[0].replace("file://localhost","") )
+    obj.close()
+
+    ### launch KW trigger generation
+    if opts.verbose:
+        print( "runing KW trigger generation" )
+
+    cmd = "kleineWelleM %s -inlist %s"%(kwconfig_path, inlist_path)
+    out = "%s/%s.out"%(opts.output_dir, opts.frametype)
+    err = "%s/%s.err"%(opts.output_dir, opts.frametype)
+    if opts.verbose:
+        print( "    cd %s"%opts.output_dir )
+        print "    "+cmd
+        print "    out : "+out
+        print "    err : "+err
+    out_obj = open( out, "w" )
+    err_obj = open( err, "w" )
+    os.chdir(opts.output_dir)
+    proc = sp.Popen(cmd.split(), stdout=out_obj, stderr=err_obj)
+    out_obj.close()
+    err_obj.close()
+    proc.wait()
+
+    if opts.verbose:
+        print "    cd "+cwd
+    os.chdir(cwd)
+
+#---
+
+print "\nWARNING: we do NOT window triggers by any segments. What was produced is what we get. This many need to be changed in the future, but for now IT IS THE USER'S RESPONSIBILITY TO FEED IN APPROPRIATE gpsstart gpsstop TIMES!"
+
+#---
+
+### read in triggers
+if opts.verbose:
+    print( "reading in triggers" )
+
+### NOTE: this may not be the most memory-efficient storage...
+trgs = dict()
+for trg_path in glob.glob("%s/%s-KW_%s_TRIGGERS-*/%s-KW_%s_TRIGGERS-*-%d.trg"%(opts.output_dir, observatory, opts.tag, observatory, opts.tag, opts.kwstride)):
+    obj = open(trg_path, 'r')
+    cols = obj.readline().strip()[1:].split() ### FIXME may be fragile...
+    toFloat = [_ for _ in cols if _!='channel']
+    for line in obj:
+        fields = dict(zip(cols, line.strip().split()))
+
+        if fields['channel'] not in opts.exclude:
+            if not trgs.has_key(fields['channel']):
+                trgs[fields['channel']] = dict((thr, []) for thr in opts.kwsignif_thr) ### set up this KW channel
+
+            for key in toFloat:
+                fields[key] = float(fields[key])
+            ### bin data by kwsignif_thr
+            for thr in opts.kwsignif_thr:
+                if fields['significance'] >= thr:
+                    trgs[fields.pop('channel')][thr].append( fields ) ### add it only to one set
+                    break ### do not double count
+            else:
+                pass ### only remember things that we'll count later on...
+                     ### because of the default list for opts.kwsignif_thr, we should retain everything, though
+
+    obj.close()
+    
+#-------------------------------------------------
+
+if opts.verbose:
+    print( "" )
+# generate gps time samples for reference
+dt = 1./opts.srate
+gps = np.arange(gpsstart, gpsstop, dt)
+if opts.reference_gps!=None:
+    tref = int(opts.reference_gps)
+else:
+    tref = int(gps[0])
+N = len(gps)
+
+plotting_index = min(1, int(N/10000)) ### only plot 1 out of every "plotting_index" points to avoid breaking matplotlib
+
+### get boundaries for rate estimation window
+minima = gps-opts.window
+minima[minima<gpsstart] = gpsstart
+maxima = gps+opts.window
+maxima[maxima>gpsstop] = gpsstop
+
+norms = maxima-minima ### normalization for rate estimate
+                      ### we divide by this, but should be pretty confident no element==0 based on reasonable input parameters...
+if np.any(norms==0):
+    raise ValueError, 'some values of norms==0, so you will want to re-think your command-line arguments'
+
+### temporary helper arrays to speed things up by avoiding reallocating memory
+tmp = np.empty((2, N), dtype=float)
+lpvl = np.empty_like(gps, dtype=float) ### a holder for log(pval) as a function of time
+counts = np.zeros_like(gps, dtype=float)
+
+tmp[0,:] = maxima-gps
+tmp[1,:] = gps-minima
+starting_dts = np.max(tmp, axis=0) ### the biggest window we have at each gps time...
+
+#starting_dts = np.min((maxima-gps, gps-minima), axis=0) ### use this as a refernece so we only compute it once
+
+ones = np.ones_like(gps, dtype=float)*0.01 ### similarly, this is just a refernece
+
+###----------- rate pointy-Poisson p-value ESTIMATION
+if opts.verbose:
+    print( "estimating p-values of aux triggers" )
+
+lpvls = dict()
+for chan, data in trgs.items():
+    if opts.verbose:
+        print( "    "+chan )
+
+    lpvl *= 0. ### reset this to zero
+    counts *= 0.
+
+#    lpvl = np.zeros_like(gps, dtype=float)
+#    counts = np.zeros_like(gps, dtype=float)
+
+    dts = np.copy(starting_dts) ### make a copy of this so that it is instantiated correctly. 
+                                ### I think this was buggy before because it was not re-instantiated correctly during each epoch
+
+    ### iterate over KWsignif thr and extremize lnpvl
+    for thr in opts.kwsignif_thr:
+        for trg in data[thr]: ### iterate over each trigger and add to the cumulative count if it is close enough
+                              ### note, because of the way we've binned data, we only touch each trigger once and re-use "rate" for multiple "thr"
+            t = trg['time']
+            counts += (minima<=t)*(t<=maxima) ### add to rate estimate if within the windows
+
+            ### mitigate exact matches (which will screw up the p-value estimate) by requiring dt > duration/100 (a reasonable bound?)
+            ### NOTE: the following array manipulations should be faster than a more "compact" syntax
+            tmp[0,:] = ones*(trg['stop_time']-trg['start_time'])
+            tmp[1,:] = np.abs(gps-t)
+            tmp[0,:] = np.max(tmp, axis=0)
+            tmp[1,:] = dts
+            dts[:] = np.min(tmp, axis=0)
+
+#            dts = np.min((
+#                dts, 
+#                np.max((
+#                        np.ones_like(gps, float)*0.01*(trg['stop_time']-trg['start_time']), 
+#                        np.abs(gps-t),
+#                        ), 
+#                        axis=0,
+#                    )
+#                ), 
+#                axis=0,
+#            ) ### take the overall closest trigger to each gps time
+
+        truth = counts > 0 ### FIXME: only update things for which we have a non-zero rate estimate...
+                           ### this is not great, but it's the best I can do for now. 
+                           ### Should really marginalize over rates, which will completely remove this issue
+        tmp[0,:] = lpvl
+        tmp[1,:] = np.log10(1 - np.exp(-2*dts*counts/norms))
+        lpvl[truth] = np.min(tmp, axis=0)[truth] ### minimize at each gps time
+
+#        lpvl[truth] = np.min((lpvl[truth], np.log10(1-np.exp(-2*dts[truth]*counts[truth]/norms[truth]))), axis=0)
+
+    lpvls[chan] = np.copy(lpvl) ### make a copy so we do not overwrite this in the next epoch
+   
+    ### write time-series to disk
+    path = "%s/%s%s-%d-%d.npy"%(opts.output_dir, chan, filetag, gpsstart, gpsdur)
+    if opts.verbose:
+        print( "      "+path )
+    np.save(path, lpvl)
+
+    ### plot time-series
+    if opts.plot:
+        fig = plt.figure()
+        ax = fig.gca()
+
+        ax.plot((gps-tref)[::plotting_index], lpvl[::plotting_index])
+
+        ax.set_xlabel( '$t-%d$'%tref )
+        ax.set_ylabel( '$\log_{10} p_i$' )
+        ax.grid(True, which='both')
+        ax.set_title(chan.replace('_','\_'))
+
+        if opts.reference_gps!=None:
+            ax.plot([opts.reference_gps-tref]*2, ax.get_ylim(), 'k--')
+
+        for start, dur in opts.plot_start_dur:
+            ax.set_xlim(xmin=start-tref, xmax=start+dur-tref)
+            path = "%s/%s%s-%d-%d.png"%(opts.output_dir, chan, filetag, start, dur)
+            if opts.verbose:
+                print( "      "+path )
+            fig.savefig(path)
+        plt.close(fig)
+
+#-------------------------------------------------
+
+###----------- naive_bayes ESTIMATION
+if opts.verbose:
+    print( "computing naive bayes ranking statistic" )
+
+nbays = np.zeros_like(gps, float)
+for lpvl in lpvls.values():
+    nbays += lpvl
+
+path = "%s/naivebayes%s-%d-%d.npy"%(opts.output_dir, filetag, gpsstart, gpsdur)
+if opts.verbose:
+    print( "    "+path )
+np.save(path, nbays)
+
+if opts.plot:
+    fig = plt.figure()
+    ax = fig.gca()
+
+    ax.plot((gps-tref)[::plotting_index], nbays[::plotting_index])
+
+    ax.set_xlabel( '$t-%d$'%tref )
+    ax.set_ylabel( '$\sum_i \log_{10} p_i$' )
+    ax.grid(True, which='both')
+    ax.set_title('Naive Bayes Joint Statistic')
+
+    if opts.reference_gps!=None:
+        ax.plot([opts.reference_gps-tref]*2, ax.get_ylim(), 'k--')
+
+    for start, dur in opts.plot_start_dur:
+        ax.set_xlim(xmin=start-tref, xmax=start+dur-tref)
+        path = "%s/naivebayes%s-%d-%d.png"%(opts.output_dir, filetag, start, dur)
+        if opts.verbose:
+            print( "    "+path )
+        fig.savefig(path)
+    plt.close(fig)

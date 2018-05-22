@@ -219,7 +219,7 @@ else:
     tref = int(gps[0])
 N = len(gps)
 
-plotting_index = min(1, int(N/10000)) ### only plot 1 out of every "plotting_index" points to avoid breaking matplotlib
+plotting_index = max(1, int(N/10000)) ### only plot 1 out of every "plotting_index" points to avoid breaking matplotlib
 
 ### get boundaries for rate estimation window
 minima = gps-opts.window

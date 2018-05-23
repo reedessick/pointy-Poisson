@@ -1,0 +1,192 @@
+#!/usr/bin/env python
+
+__usage__ = 'unexpected2naive_bayes_timeseries [--options] unexpected.out gpsstart gpsstop'
+
+#-------------------------------------------------
+
+import os
+import subprocess as sp ### yuck, but it'll be fast
+
+from optparse import OptionParser
+
+#-------------------------------------------------
+
+RAW_CHANNEL_TEMPLATE = '%s:%s'
+
+#-------------------------------------------------
+
+parser = OptionParser(usage=__usage__, description=__doc__)
+
+parser.add_option('-v', '--verbose', default=False, action='store_true')
+parser.add_option('-V', '--Verbose', default=False, action='store_true')
+
+parser.add_option('-p', '--pvalue', default=1e-3, type='float',
+    help='the p-value used to filter out which channels to use within the naive_bayes_timeseries')
+
+parser.add_option('-l', '--launch', default=False, action='store_true',
+    help='actually launch the naive_bayes_timeseries commands')
+
+parser.add_option('-o', '--output-dir', default='.', type='string')
+parser.add_option('-t', '--tag', default='', type='string')
+
+#--- options specifically for naive_bayes_timeseries
+
+parser.add_option('', '--srate', default=64, type='float',
+    help='sample rate for things like p-value estimates, specified in Hz. \
+DEFAULT=64')
+parser.add_option('', '--window', default=1000, type='float',
+    help='the window used for rate estimates (gps+/-opts.window), specified in sec. \
+DEFAUL=1000')
+
+parser.add_option('', '--exclude', default=[], type='string', action='append',
+    help='an exact match for KW channel names that you want excluded')
+
+parser.add_option('', '--kwsignif-thr', default=[15.0], type='float', action='append',
+    help='the kwsignif threshold over which we maximize when computing pointy-Poisson statistic. \
+DEFAULT=[15.0]')
+
+parser.add_option('', '--skip-kwtrg-generation', default=False, action='store_true')
+parser.add_option('', '--kwstride', default=32, type='int',
+    help='DEFAULT=32')
+parser.add_option('', '--frametype', default='L1_R', type='string',
+    help='used for KW trigger generation and naming convention. \
+DEFAULT=L1_R')
+
+parser.add_option('', '--plot', default=False, action='store_true',
+    help='generate plots in addition to the npz files')
+parser.add_option('', '--plot-start-dur', nargs=2, default=[], type='float', action='append',
+    help='generate zoomed plots using this window. Can be repeated. \
+DEFAULT=[]')
+
+parser.add_option('', '--reference-gps', default=None, type='float')
+
+opts, args = parser.parse_args()
+assert len(args)==3, 'please supply exactly 3 input arguments\n%s'%__usage__
+path = args[0]
+gpsstart, gpsstop = [float(_) for _ in args[1:]]
+
+if not os.path.exists(opts.output_dir):
+    os.makedirs(opts.output_dir)
+
+filetag = '_'+opts.tag if opts.tag else ''
+
+opts.verbose |= opts.Verbose
+
+#-------------------------------------------------
+
+### read in and parse pointy.out
+if opts.verbose:
+    print('reading channels from: '+path)
+with open(path, 'r') as file_obj:
+    channels = [line.strip().split('_')[:-2] for line in file_obj.readlines()]
+
+'''
+with open(path, 'r') as file_obj:
+    line = file_obj.readline()
+    while line:
+        if 'channel=' in line:
+            channel = line.strip().split('channel=')[1]
+            line = file_obj.readline()
+            while 'pvalue' not in line:
+                line = file_obj.readline()
+            pvalue = float(line.strip().split('pvalue=')[1])
+            if pvalue <= opts.pvalue:
+                channels.append((channel, pvalue))
+        line = file_obj.readline()
+
+if opts.verbose:
+    print('retained %d channels'%len(channels))
+    if opts.Verbose:
+        for channel, pvalue in channels:
+            print('    %.6e    %s'%(pvalue, channel))
+channels = [chan.split('_')[:-2] for chan, pvalue in channels]
+'''
+
+# un-mangle into raw channel names
+channels = set([RAW_CHANNEL_TEMPLATE%(chan[0], '_'.join(chan[1:])) for chan in channels])
+
+if opts.verbose:
+    print('retained %d unique channel names'%len(channels))
+
+#------------------------
+
+### find frames for relevant time span, extract sample rates for these channels
+cmd = [
+    'gw_data_find',
+    '-o', opts.frametype[0],
+    '--type', opts.frametype,
+    '-s', '%f'%gpsstart,
+    '-e', '%f'%gpsstop,
+    '-u', 'file',
+]
+if opts.verbose:
+    print(' '.join(cmd))
+stdout, stdin = sp.Popen(cmd, stdout=sp.PIPE, stderr=sp.PIPE).communicate() ### block until done
+example_frame = stdout.strip().split()[0].replace('file://localhost','')  ### take the first frame as an example to find sample rates
+
+# find sample rates via FrChannels
+cmd = [
+    'FrChannels',
+    example_frame,
+]
+if opts.verbose:
+    print(' '.join(cmd))
+stdout, stdin = sp.Popen(cmd, stdout=sp.PIPE, stderr=sp.PIPE).communicate() ### block again
+input_channels = []
+for line in stdout.strip().split('\n'):
+    if not line:
+        continue
+    chan, freq = line.strip().split()
+    if chan in channels: ### require an exact match
+        input_channels.append((chan, freq))
+input_channels.sort(key=lambda l: l[0])
+
+if opts.verbose:
+    print('discovered sample rates for %d channels'%(len(input_channels)))
+    if opts.Verbose:
+        for chan, freq in input_channels:
+            print('    %s %s'%(chan, freq))
+
+# write input channels path
+input_channels_path = '%s/input_channels%s.txt'%(opts.output_dir, filetag)
+if opts.verbose:
+    print('saving: '+input_channels_path)
+with open(input_channels_path, 'w') as file_obj:
+    for chan, freq in input_channels:
+        print >> file_obj, '%s %s'%(chan, freq)
+
+#------------------------
+
+### format command for naive_bayes_timeseries and submit
+cmd = [
+    'naive_bayes_timeseries',
+    '%f'%gpsstart,
+    '%f'%gpsstop,
+    input_channels_path,
+    '--srate', '%f'%opts.srate,
+    '--window', '%f'%opts.window,
+    '--kwstride', '%d'%opts.kwstride,
+    '--frametype', opts.frametype,
+    '--output-dir', opts.output_dir,
+]
+if opts.verbose:
+    cmd.append('--verbose')
+if opts.plot:
+    cmd.append('--plot')
+if opts.tag:
+    cmd += ['--tag', opts.tag]
+if opts.skip_kwtrg_generation:
+    cmd.append(' --skip-kwtrg-generation')
+if opts.reference_gps!=None:
+    cmd += [' --reference-gps', '%f'%opts.reference_gps]
+for e in opts.exclude:
+    cmd += ['--exclude', e]
+for start, dur in opts.plot_start_dur:
+    cmd += ['--plot-start-dur', '%f'%start, '%f'%dur]
+
+# actually submit the command
+if opts.verbose:
+    print(' '.join(cmd))
+
+if opts.launch:
+    sp.Popen(cmd)

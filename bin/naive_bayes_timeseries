@@ -89,6 +89,9 @@ parser.add_option('', '--plot-start-dur', nargs=2, default=[], type='float', act
 DEFAULT=[]')
 
 parser.add_option('', '--reference-gps', default=None, type='float')
+parser.add_option('', '--frac-of-dur', default=0.01, type='float',
+    help='the fraction of the trigger duration used as the minimum dt in the pointy statistic. \
+DEFAULT=0.01')
 
 parser.add_option('-o', '--output-dir', default='.', type='string')
 parser.add_option('-t', '--tag', default='', type='string')
@@ -203,14 +206,17 @@ for trg_path in glob.glob("%s/%s-KW_%s_TRIGGERS-*/%s-KW_%s_TRIGGERS-*-%d.trg"%(o
             ### bin data by kwsignif_thr
             for thr in opts.kwsignif_thr:
                 if fields['significance'] >= thr:
-                    trgs[fields.pop('channel')][thr].append( fields ) ### add it only to one set
+                    trgs[fields.pop('channel')][thr].append( (fields['time'], fields['stop_time']-fields['start_time']) ) ### add it only to one set 
                     break ### do not double count
             else:
                 pass ### only remember things that we'll count later on...
                      ### because of the default list for opts.kwsignif_thr, we should retain everything, though
 
     obj.close()
-    
+
+# map into structured arrays for easy access later
+trgs = dict((chan, dict((thr, np.array(times, dtype=[('time', 'float'), ('duration', 'float')])) for thr, times in val.items())) for chan, val in trgs.items())
+
 #-------------------------------------------------
 
 if opts.verbose:
@@ -241,14 +247,13 @@ if np.any(norms==0):
 tmp = np.empty((2, N), dtype=float)
 lpvl = np.empty_like(gps, dtype=float) ### a holder for log(pval) as a function of time
 counts = np.zeros_like(gps, dtype=float)
+dts = np.empty(N, dtype='float') ### a holder used later
+truth = np.empty(N, dtype='bool') ### same here. We're trying hard to avoid re-allocating memory within the loop
 
+# compute the biggest windows we'd ever have
 tmp[0,:] = maxima-gps
 tmp[1,:] = gps-minima
 starting_dts = np.max(tmp, axis=0) ### the biggest window we have at each gps time...
-
-#starting_dts = np.min((maxima-gps, gps-minima), axis=0) ### use this as a refernece so we only compute it once
-
-ones = np.ones_like(gps, dtype=float)*0.01 ### similarly, this is just a refernece
 
 ###----------- rate pointy-Poisson p-value ESTIMATION
 if opts.verbose:
@@ -261,50 +266,37 @@ for chan, data in trgs.items():
 
     lpvl *= 0. ### reset this to zero
     counts *= 0.
-
-#    lpvl = np.zeros_like(gps, dtype=float)
-#    counts = np.zeros_like(gps, dtype=float)
-
-    ### FIXME: this must be expensive... can we do without it?
-    dts = np.copy(starting_dts) ### make a copy of this so that it is instantiated correctly. 
-                                ### I think this was buggy before because it was not re-instantiated correctly during each epoch
+    dts[:] = starting_dts[:]
 
     ### iterate over KWsignif thr and extremize lnpvl
     for thr in opts.kwsignif_thr:
-        for trg in data[thr]: ### iterate over each trigger and add to the cumulative count if it is close enough
-                              ### note, because of the way we've binned data, we only touch each trigger once and re-use "rate" for multiple "thr"
-                              ### FIXME: if we have many triggers, this is very expensive. Can we somehow do away with this explicit loop in favor of array stuff?
-            t = trg['time']
-            counts += (minima<=t)*(t<=maxima) ### add to rate estimate if within the windows
+        times = data[thr]
+        N = len(times)
+        if N: ### find the minimum dt, otherwise stick with starting_dts
+            bounds = list(0.5*(times['time'][1:]+times['time'][:-1])) ### find the mid-points between triggers
+            bounds = [gpsstart] + bounds + [gpsstop]
 
-            ### mitigate exact matches (which will screw up the p-value estimate) by requiring dt > duration/100 (a reasonable bound?)
-            ### NOTE: the following array manipulations should be faster than a more "compact" syntax
-            tmp[0,:] = ones*(trg['stop_time']-trg['start_time'])
-            tmp[1,:] = np.abs(gps-t)
-            tmp[0,:] = np.max(tmp, axis=0)
-            tmp[1,:] = dts
-            dts[:] = np.min(tmp, axis=0)
+            for m, M, trg in zip(bounds[:-1], bounds[1:], times):
+                t = trg['time']     ### extract crap
+                counts += (minima<=t)*(t<=maxima) ### add to rate estimate if within the windows
 
-#            dts = np.min((
-#                dts, 
-#                np.max((
-#                        np.ones_like(gps, float)*0.01*(trg['stop_time']-trg['start_time']), 
-#                        np.abs(gps-t),
-#                        ), 
-#                        axis=0,
-#                    )
-#                ), 
-#                axis=0,
-#            ) ### take the overall closest trigger to each gps time
+                ### NOTE: 
+                ###     while we iterate directly over triggers, we only analyze the few gps samples relevant for that trigger instead of the entire array
+                truth[:] = (m<=gps)*(gps<M) ### select off only the times relevant for this triggers
 
-        truth = counts > 0 ### FIXME: only update things for which we have a non-zero rate estimate...
-                           ### this is not great, but it's the best I can do for now. 
-                           ### Should really marginalize over rates, which will completely remove this issue
+                tmp[0,truth] = opts.frac_of_dur*trg['duration'] ### mitigate exact matches, which will screw up the p-value estimate
+                                                           ### by requiring dt > duration/100 (a reasonable bound?)
+                tmp[1,truth] = np.abs(gps[truth]-t)
+                tmp[0,truth] = np.max(tmp, axis=0)
+                tmp[1,truth] = dts[truth]
+                dts[truth] = np.min(tmp, axis=0)
+
+        truth[:] = counts > 0 ### FIXME: only update things for which we have a non-zero rate estimate...
+                              ### this is not great, but it's the best I can do for now. 
+                              ### Should really marginalize over rates, which will completely remove this issue
         tmp[0,:] = lpvl
         tmp[1,:] = np.log10(1 - np.exp(-2*dts*counts/norms))
         lpvl[truth] = np.min(tmp, axis=0)[truth] ### minimize at each gps time
-
-#        lpvl[truth] = np.min((lpvl[truth], np.log10(1-np.exp(-2*dts[truth]*counts[truth]/norms[truth]))), axis=0)
 
     ### write time-series to disk
     if not opts.do_not_save_singlechan:

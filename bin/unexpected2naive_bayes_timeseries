@@ -20,11 +20,13 @@ parser = OptionParser(usage=__usage__, description=__doc__)
 parser.add_option('-v', '--verbose', default=False, action='store_true')
 parser.add_option('-V', '--Verbose', default=False, action='store_true')
 
-parser.add_option('-p', '--pvalue', default=1e-3, type='float',
-    help='the p-value used to filter out which channels to use within the naive_bayes_timeseries')
+#parser.add_option('-p', '--pvalue', default=1e-3, type='float',
+#    help='the p-value used to filter out which channels to use within the naive_bayes_timeseries')
 
 parser.add_option('-l', '--launch', default=False, action='store_true',
     help='actually launch the naive_bayes_timeseries commands')
+parser.add_option('-w', '--wait', default=False, action='store_true',
+    help='block until subprocess finishes if called with --launch')
 
 parser.add_option('-o', '--output-dir', default='.', type='string')
 parser.add_option('-t', '--tag', default='', type='string')
@@ -189,4 +191,6 @@ if opts.verbose:
     print(' '.join(cmd))
 
 if opts.launch:
-    sp.Popen(cmd)
+    proc = sp.Popen(cmd)
+    if opts.wait:
+        proc.wait()

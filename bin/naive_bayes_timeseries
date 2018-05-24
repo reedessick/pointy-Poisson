@@ -214,8 +214,15 @@ for trg_path in glob.glob("%s/%s-KW_%s_TRIGGERS-*/%s-KW_%s_TRIGGERS-*-%d.trg"%(o
 
     obj.close()
 
+
 # map into structured arrays for easy access later
-trgs = dict((chan, dict((thr, np.array(times, dtype=[('time', 'float'), ('duration', 'float')])) for thr, times in val.items())) for chan, val in trgs.items())
+# filter triggers by gpsstart, gpsstop
+dtype=[('time', 'float'), ('duration', 'float')]
+for chan, val in trgs.items():
+    for thr, times in val.items():
+        times = np.array(times, dtype=dtype)
+        t = times['time']
+        val[thr] = times[(gpsstart<=t)*(t<gpsstop)]
 
 #-------------------------------------------------
 
@@ -287,9 +294,9 @@ for chan, data in trgs.items():
                 tmp[0,truth] = opts.frac_of_dur*trg['duration'] ### mitigate exact matches, which will screw up the p-value estimate
                                                            ### by requiring dt > duration/100 (a reasonable bound?)
                 tmp[1,truth] = np.abs(gps[truth]-t)
-                tmp[0,truth] = np.max(tmp, axis=0)
+                tmp[0,truth] = np.max(tmp[:,truth], axis=0)
                 tmp[1,truth] = dts[truth]
-                dts[truth] = np.min(tmp, axis=0)
+                dts[truth] = np.min(tmp[:,truth], axis=0)
 
         truth[:] = counts > 0 ### FIXME: only update things for which we have a non-zero rate estimate...
                               ### this is not great, but it's the best I can do for now. 

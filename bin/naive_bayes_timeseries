@@ -93,6 +93,11 @@ parser.add_option('', '--reference-gps', default=None, type='float')
 parser.add_option('-o', '--output-dir', default='.', type='string')
 parser.add_option('-t', '--tag', default='', type='string')
 
+parser.add_option('', '--do-not-save-singlechan', default=False, action='store_true',
+    help='do not save npy files for individual channels. Could help speed up run-time')
+parser.add_option('', '--do-not-plot-singlechan', default=False, action='store_true',
+    help='do not plot results for individual channels. Could help speed up run-time')
+
 opts, args = parser.parse_args()
 assert len(args)==3, "please supply exactly 3 input arguments\n%s"%__usage__
 gpsstart, gpsstop = [float(_) for _ in args[:2]]
@@ -249,7 +254,7 @@ ones = np.ones_like(gps, dtype=float)*0.01 ### similarly, this is just a referne
 if opts.verbose:
     print( "estimating p-values of aux triggers" )
 
-lpvls = dict()
+nbays = np.zeros_like(gps, float) ### holder to the total naive bayes statistic
 for chan, data in trgs.items():
     if opts.verbose:
         print( "    "+chan )
@@ -260,6 +265,7 @@ for chan, data in trgs.items():
 #    lpvl = np.zeros_like(gps, dtype=float)
 #    counts = np.zeros_like(gps, dtype=float)
 
+    ### FIXME: this must be expensive... can we do without it?
     dts = np.copy(starting_dts) ### make a copy of this so that it is instantiated correctly. 
                                 ### I think this was buggy before because it was not re-instantiated correctly during each epoch
 
@@ -267,6 +273,7 @@ for chan, data in trgs.items():
     for thr in opts.kwsignif_thr:
         for trg in data[thr]: ### iterate over each trigger and add to the cumulative count if it is close enough
                               ### note, because of the way we've binned data, we only touch each trigger once and re-use "rate" for multiple "thr"
+                              ### FIXME: if we have many triggers, this is very expensive. Can we somehow do away with this explicit loop in favor of array stuff?
             t = trg['time']
             counts += (minima<=t)*(t<=maxima) ### add to rate estimate if within the windows
 
@@ -299,16 +306,15 @@ for chan, data in trgs.items():
 
 #        lpvl[truth] = np.min((lpvl[truth], np.log10(1-np.exp(-2*dts[truth]*counts[truth]/norms[truth]))), axis=0)
 
-    lpvls[chan] = np.copy(lpvl) ### make a copy so we do not overwrite this in the next epoch
-   
     ### write time-series to disk
-    path = "%s/%s%s-%d-%d.npy"%(opts.output_dir, chan, filetag, gpsstart, gpsdur)
-    if opts.verbose:
-        print( "      "+path )
-    np.save(path, lpvl)
+    if not opts.do_not_save_singlechan:
+        path = "%s/%s%s-%d-%d.npy"%(opts.output_dir, chan, filetag, gpsstart, gpsdur)
+        if opts.verbose:
+            print( "      "+path )
+        np.save(path, lpvl)
 
     ### plot time-series
-    if opts.plot:
+    if opts.plot and (not opts.do_not_plot_singlechan):
         fig = plt.figure()
         ax = fig.gca()
 
@@ -331,15 +337,14 @@ for chan, data in trgs.items():
             fig.savefig(path)
         plt.close(fig)
 
+    ### add this to the running total
+    nbays += lpvl   
+
 #-------------------------------------------------
 
 ###----------- naive_bayes ESTIMATION
 if opts.verbose:
-    print( "computing naive bayes ranking statistic" )
-
-nbays = np.zeros_like(gps, float)
-for lpvl in lpvls.values():
-    nbays += lpvl
+    print( "saving naive bayes ranking statistic" )
 
 path = "%s/naivebayes%s-%d-%d.npy"%(opts.output_dir, filetag, gpsstart, gpsdur)
 if opts.verbose:

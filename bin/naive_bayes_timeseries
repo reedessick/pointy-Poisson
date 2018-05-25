@@ -251,10 +251,11 @@ if np.any(norms==0):
 
 ### temporary helper arrays to speed things up by avoiding reallocating memory
 tmp = np.empty((2, N), dtype=float)
-lpvl = np.empty_like(gps, dtype=float) ### a holder for log(pval) as a function of time
-counts = np.zeros_like(gps, dtype=float)
+lpvl = np.zeros(N, dtype=float) ### a holder for log(pval) as a function of time
+counts = np.zeros(N, dtype=float)
 dts = np.empty(N, dtype='float') ### a holder used later
 truth = np.empty(N, dtype='bool') ### same here. We're trying hard to avoid re-allocating memory within the loop
+inds = np.arange(N) ### used when setting minimum duration
 
 # compute the biggest windows we'd ever have
 tmp[0,:] = maxima-gps
@@ -270,8 +271,8 @@ for chan, data in trgs.items():
     if opts.verbose:
         print( "    "+chan )
 
-    lpvl *= 0. ### reset this to zero
-    counts *= 0.
+    lpvl[:] = 0. ### reset this to zero
+    counts[:] = 0.
     dts[:] = starting_dts[:]
 
     ### iterate over KWsignif thr and extremize lnpvl
@@ -279,8 +280,8 @@ for chan, data in trgs.items():
         times = data[thr]
         N = len(times)
         if N: ### find the minimum dt, otherwise stick with starting_dts
-            bounds = list(0.5*(times['time'][1:]+times['time'][:-1])) ### find the mid-points between triggers
-            bounds = [gpsstart] + bounds + [gpsstop]
+            ### find the mid-points between triggers and then bracket the whole thing with +/-infty
+            bounds = [-np.infty] + list(0.5*(times['time'][1:]+times['time'][:-1])) + [np.infty] 
 
             for m, M, trg in zip(bounds[:-1], bounds[1:], times):
                 t = trg['time']     ### extract crap
@@ -289,25 +290,24 @@ for chan, data in trgs.items():
                 ### NOTE: 
                 ###     while we iterate directly over triggers, we only analyze the few gps samples relevant for that trigger instead of the entire array
                 truth[:] = (m<=gps)*(gps<M) ### select off only the times relevant for this triggers
+                if np.any(truth): ### at times, neighboring triggers can be so close there are not relevant samples between them...
+                                  ### only perform complicated minimum logic when we have something meaningful to do
+                    min_dt = opts.frac_of_dur*trg['duration']
+                    tmp[0,truth] = np.abs(gps[truth]-t)
 
-#                tmp[0,truth] = opts.frac_of_dur*trg['duration'] ### mitigate exact matches, which will screw up the p-value estimate
-                                                           ### by requiring dt > duration/100 (a reasonable bound?)
-#                tmp[1,truth] = np.abs(gps[truth]-t)
-#                tmp[0,truth] = np.max(tmp[:,truth], axis=0)
+                    tmp[1,truth] = min_dt
+                    tmp[0,truth] = np.max(tmp[:,truth], axis=0)
+#                    tmp[0,inds[tmp[0,truth]<min_dt]] = min_dt ### FIXME this doesn't work for some reason...
 
-                tmp[0,truth] = np.abs(gps[truth]-t)
-                min_dur = opts.frac_of_dur*trg['duration']
-                tmp[0,truth][tmp[0,truth]<min_dur] = min_dur
-
-                tmp[1,truth] = dts[truth]
-                dts[truth] = np.min(tmp[:,truth], axis=0)
+                    tmp[1,truth] = dts[truth]
+                    dts[truth] = np.min(tmp[:,truth], axis=0)
 
         truth[:] = counts > 0 ### FIXME: only update things for which we have a non-zero rate estimate...
                               ### this is not great, but it's the best I can do for now. 
                               ### Should really marginalize over rates, which will completely remove this issue
-        tmp[0,:] = lpvl
-        tmp[1,:] = np.log10(1 - np.exp(-2*dts*counts/norms))
-        lpvl[truth] = np.min(tmp, axis=0)[truth] ### minimize at each gps time
+        tmp[0,truth] = lpvl[truth]
+        tmp[1,truth] = np.log10(1 - np.exp(-2*dts[truth]*counts[truth]/norms[truth])) ### still occassionally getting -infty here...
+        lpvl[truth] = np.min(tmp[:,truth], axis=0) ### minimize at each gps time
 
     ### write time-series to disk
     if not opts.do_not_save_singlechan:

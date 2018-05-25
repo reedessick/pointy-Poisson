@@ -22,8 +22,38 @@ plt.rcParams['text.usetex'] = True
 
 from optparse import OptionParser
 
-### non-standard libraries
-from naivebayes import utils
+#-------------------------------------------------
+
+### this is a bit of a mess and should be defined in a single place, but I'm just copying it wholesale for now
+frqmap = {
+        65536.0:[(8,128), (32,2048), (1024,4096), (2048,8192)],
+        32768.0:[(8,128), (32,2048), (1024,4096), (2048,8192)],
+        16384.0:[(8,128), (32,2048), (1024,4096), (2048,8192)],
+         8192.0:[(8,128), (32,2048), (1024,4096), (2048,8192)],
+         4096.0:[(8,128), (32,2048), (1024,4096)],
+         2048.0:[(8,128), (32,2048)],
+         1024.0:[(8,128), (32,1024)],
+          512.0:[(8,128), (32,512)],
+          256.0:[(8,128), (32,256)],
+           16.0:[],
+        }
+
+KWconfig_header = """stride %.1f
+basename %s-KW_%s_TRIGGERS
+segname %s-KW_%s_SEGMENTS
+significance 15.0
+threshold 3.0
+decimateFactor -1"""
+
+#========================
+
+def chanlist2KWconfig( chanlist, observatory, tag="C", kwstride=32 ):
+    kwconfig = KWconfig_header%(kwstride, observatory, tag, observatory, tag)
+    for chan, freq in chanlist:
+        freq = int(freq)
+        for minF, maxF in frqmap[freq]:
+            kwconfig += "\nchannel %s %d %d"%(chan, minF, maxF)
+    return kwconfig
 
 #-------------------------------------------------
 
@@ -91,13 +121,15 @@ else:
 
 observatory = opts.frametype[0] ### FIXME: extraction of observatory from frame type may be fragile...
 
-opts.kwsignif_thr.sort(reverse=True) ### order from largest to smallest
+cwd = os.getcwd()
 
-#-------------------------------------------------
+opts.kwsignif_thr.sort(reverse=True) ### order from largest to smallest
 
 if opts.verbose:
     print( "reading channels from : "+chanlist_path )
-chanlist = utils.chanlist2chans(chanlist_path)
+obj = open(chanlist_path, 'r')
+chanlist = [line.strip().split() for line in obj.readlines()]
+obj.close()
 
 #-------------------------------------------------
 
@@ -107,20 +139,44 @@ if not opts.skip_kwtrg_generation:
     kwconfig_path = "%s/KW%s.cnf"%(opts.output_dir, filetag)
     if opts.verbose:
         print( "writing : "+kwconfig_path )
-    with open(kwconfig_path, 'w') as obj:
-        obj.write(utils.chanlist2KWconfig( chanlist, observatory, tag=opts.tag, kwstride=opts.kwstride))
+    obj = open(kwconfig_path, 'w')
+    obj.write(chanlist2KWconfig( chanlist, observatory, tag=opts.tag, kwstride=opts.kwstride))
+    obj.close()
 
     ### go grab data
     inlist_path = "%s/frames%s.txt"%(opts.output_dir, filetag)
+    cmd = "gw_data_find -o %s --type %s -u file -s %d -e %d"%(observatory, opts.frametype, gpsstart-2*opts.kwstride, gpsstop+2*opts.kwstride) ### add some buffer to be safe
+
     if opts.verbose:
         print( "writing : "+inlist_path )
-    with open(inlist_path, 'w') as obj:
-        obj.write('\n'.join(utils.seg2inlist(gpsstart-2*opts.kwstride, gpsstop+2*opts.kwstride, opts.frametype, observatory, verbose=opts.verbose)))
+        print( cmd )
+    obj = open(inlist_path, "w")
+    obj.write( sp.Popen(cmd.split(), stdout=sp.PIPE).communicate()[0].replace("file://localhost","") )
+    obj.close()
 
-    ### launch KW trigger generationu
+    ### launch KW trigger generation
     if opts.verbose:
         print( "runing KW trigger generation" )
-    utils.genkwtrgs(kwconfig_path, inlist_path, opts.frametype, directory=opts.output_dir, verbose=opts.verbose)
+
+    cmd = "kleineWelleM %s -inlist %s"%(kwconfig_path, inlist_path)
+    out = "%s/%s.out"%(opts.output_dir, opts.frametype)
+    err = "%s/%s.err"%(opts.output_dir, opts.frametype)
+    if opts.verbose:
+        print( "    cd %s"%opts.output_dir )
+        print "    "+cmd
+        print "    out : "+out
+        print "    err : "+err
+    out_obj = open( out, "w" )
+    err_obj = open( err, "w" )
+    os.chdir(opts.output_dir)
+    proc = sp.Popen(cmd.split(), stdout=out_obj, stderr=err_obj)
+    out_obj.close()
+    err_obj.close()
+    proc.wait()
+
+    if opts.verbose:
+        print "    cd "+cwd
+    os.chdir(cwd)
 
 #---
 
@@ -133,34 +189,163 @@ if opts.verbose:
     print( "reading in triggers" )
 
 ### NOTE: this may not be the most memory-efficient storage...
-trgs = utils.paths2trgs(
-    glob.glob("%s/%s-KW_%s_TRIGGERS-*/%s-KW_%s_TRIGGERS-*-%d.trg"%(opts.output_dir, observatory, opts.tag, observatory, opts.tag, opts.kwstride),
-    opts.kwsignif_thr,
-    exclude=opts.exclude,
-    start=gpsstart,
-    stop=gpsstop,
-    verbose=opts.verbose,
-)
+trgs = dict()
+for trg_path in glob.glob("%s/%s-KW_%s_TRIGGERS-*/%s-KW_%s_TRIGGERS-*-%d.trg"%(opts.output_dir, observatory, opts.tag, observatory, opts.tag, opts.kwstride)):
+    obj = open(trg_path, 'r')
+    cols = obj.readline().strip()[1:].split() ### FIXME may be fragile...
+    toFloat = [_ for _ in cols if _!='channel']
+    for line in obj:
+        fields = dict(zip(cols, line.strip().split()))
+
+        if fields['channel'] not in opts.exclude:
+            if not trgs.has_key(fields['channel']):
+                trgs[fields['channel']] = dict((thr, []) for thr in opts.kwsignif_thr) ### set up this KW channel
+
+            for key in toFloat:
+                fields[key] = float(fields[key])
+            ### bin data by kwsignif_thr
+            for thr in opts.kwsignif_thr:
+                if fields['significance'] >= thr:
+                    trgs[fields.pop('channel')][thr].append( (fields['time'], fields['stop_time']-fields['start_time']) ) ### add it only to one set 
+                    break ### do not double count
+            else:
+                pass ### only remember things that we'll count later on...
+                     ### because of the default list for opts.kwsignif_thr, we should retain everything, though
+
+    obj.close()
+
+# map into structured arrays for easy access later
+# filter triggers by gpsstart, gpsstop
+dtype=[('time', 'float'), ('duration', 'float')]
+for chan, val in trgs.items():
+    for thr, times in val.items():
+        times = np.array(times, dtype=dtype)
+        t = times['time']
+        val[thr] = times[(gpsstart<=t)*(t<gpsstop)] ### keep only the triggers within the requested window
+
+#-------------------------------------------------
+
+if opts.verbose:
+    print( "" )
+# generate gps time samples for reference
+dt = 1./opts.srate
+gps = np.arange(gpsstart, gpsstop, dt)
+if opts.reference_gps!=None:
+    tref = int(opts.reference_gps)
+else:
+    tref = int(gps[0])
+N = len(gps)
+
+plotting_index = max(1, int(N/10000)) ### only plot 1 out of every "plotting_index" points to avoid breaking matplotlib
+
+### get boundaries for rate estimation window
+minima = gps-opts.window
+minima[minima<gpsstart] = gpsstart
+maxima = gps+opts.window
+maxima[maxima>gpsstop] = gpsstop
+
+norms = maxima-minima ### normalization for rate estimate
+                      ### we divide by this, but should be pretty confident no element==0 based on reasonable input parameters...
+if np.any(norms==0):
+    raise ValueError, 'some values of norms==0, so you will want to re-think your command-line arguments'
+
+### temporary helper arrays to speed things up by avoiding reallocating memory
+tmp = np.empty((2, N), dtype=float)
+lpvl = np.zeros(N, dtype=float) ### a holder for log(pval) as a function of time
+counts = np.zeros(N, dtype=float)
+dts = np.empty(N, dtype='float') ### a holder used later
+truth = np.empty(N, dtype='bool') ### same here. We're trying hard to avoid re-allocating memory within the loop
+inds = np.arange(N) ### used when setting minimum duration
+
+# compute the biggest windows we'd ever have
+tmp[0,:] = maxima-gps
+tmp[1,:] = gps-minima
+starting_dts = np.max(tmp, axis=0) ### the biggest window we have at each gps time...
+
+###----------- rate pointy-Poisson p-value ESTIMATION
+if opts.verbose:
+    print( "estimating p-values of aux triggers" )
+
+nbays = np.zeros_like(gps, float) ### holder to the total naive bayes statistic
+for chan, data in trgs.items():
+    if opts.verbose:
+        print( "    "+chan )
+
+    lpvl[:] = 0. ### reset this to zero
+    counts[:] = 0.
+    dts[:] = starting_dts[:]
+
+    ### iterate over KWsignif thr and extremize lnpvl
+    for thr in opts.kwsignif_thr:
+        times = data[thr]
+        N = len(times)
+        if N: ### find the minimum dt, otherwise stick with starting_dts
+            ### find the mid-points between triggers and then bracket the whole thing with +/-infty
+            bounds = [-np.infty] + list(0.5*(times['time'][1:]+times['time'][:-1])) + [np.infty] 
+
+            for m, M, trg in zip(bounds[:-1], bounds[1:], times):
+                t = trg['time']     ### extract crap
+                counts += (minima<=t)*(t<=maxima) ### add to rate estimate if within the windows
+
+                ### NOTE: 
+                ###     while we iterate directly over triggers, we only analyze the few gps samples relevant for that trigger instead of the entire array
+                truth[:] = (m<=gps)*(gps<M) ### select off only the times relevant for this triggers
+                if np.any(truth): ### at times, neighboring triggers can be so close there are not relevant samples between them...
+                                  ### only perform complicated minimum logic when we have something meaningful to do
+                    min_dt = opts.frac_of_dur*trg['duration']
+                    tmp[0,truth] = np.abs(gps[truth]-t)
+
+                    tmp[1,truth] = min_dt
+                    tmp[0,truth] = np.max(tmp[:,truth], axis=0)
+#                    tmp[0,inds[tmp[0,truth]<min_dt]] = min_dt ### FIXME this doesn't work for some reason...
+
+                    tmp[1,truth] = dts[truth]
+                    dts[truth] = np.min(tmp[:,truth], axis=0)
+
+        truth[:] = counts > 0 ### FIXME: only update things for which we have a non-zero rate estimate...
+                              ### this is not great, but it's the best I can do for now. 
+                              ### Should really marginalize over rates, which will completely remove this issue
+        tmp[0,truth] = lpvl[truth]
+        tmp[1,truth] = np.log10(1 - np.exp(-2*dts[truth]*counts[truth]/norms[truth])) ### still occassionally getting -infty here...
+        lpvl[truth] = np.min(tmp[:,truth], axis=0) ### minimize at each gps time
+
+    ### write time-series to disk
+    if not opts.do_not_save_singlechan:
+        path = "%s/%s%s-%d-%d.npy"%(opts.output_dir, chan, filetag, gpsstart, gpsdur)
+        if opts.verbose:
+            print( "      "+path )
+        np.save(path, lpvl)
+
+    ### plot time-series
+    if opts.plot and (not opts.do_not_plot_singlechan):
+        fig = plt.figure()
+        ax = fig.gca()
+
+        ax.plot((gps-tref)[::plotting_index], lpvl[::plotting_index])
+
+        ax.set_xlabel( '$t-%d$'%tref )
+        ax.set_ylabel( '$\log_{10} p_i$' )
+        ax.grid(True, which='both')
+        ax.set_title(chan.replace('_','\_'))
+
+        if opts.reference_gps!=None:
+            ax.plot(ax.get_xlim(), [np.interp(opts.reference_gps, gps, lpvl)]*2, 'k--')
+            ax.plot([opts.reference_gps-tref]*2, ax.get_ylim(), 'k--')
+
+        for start, dur in opts.plot_start_dur:
+            ax.set_xlim(xmin=start-tref, xmax=start+dur-tref)
+            path = "%s/%s%s-%d-%d.png"%(opts.output_dir, chan, filetag, start, dur)
+            if opts.verbose:
+                print( "      "+path )
+            fig.savefig(path)
+        plt.close(fig)
+
+    ### add this to the running total
+    nbays += lpvl   
 
 #-------------------------------------------------
 
 ###----------- naive_bayes ESTIMATION
-if opts.verbose:
-    print( "" )
-gps = np.arange(gpsstart, gpsstop, 1./opts.srate),
-nbys = utils.trgs2timeseries(
-    gps,
-    trgs,
-    opts.window,
-    opts.kwsignif_thr,
-    reference_gps=opts.reference_gps,
-    verbose=opts.verbose,
-    plot_start_dur=opts.plot_start_dur if opts.plot and (not opts.do_not_plot_singlechan) else [],
-    save=not opts.do_not_save_singlechan,
-    directory=opts.output_dir,
-    tag=filetag,
-)
-
 if opts.verbose:
     print( "saving naive bayes ranking statistic" )
 
@@ -169,14 +354,7 @@ if opts.verbose:
     print( "    "+path )
 np.save(path, nbays)
 
-# plot summary thing
 if opts.plot:
-    plotting_index = max(1, int(len(nbys)/10000))
-    if opts.reference_gps!=None:
-        tref = int(opts.reference_gps)
-    else:
-        tref = int(gpsstart)
-
     fig = plt.figure()
     ax = fig.gca()
 

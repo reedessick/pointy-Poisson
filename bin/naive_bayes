@@ -6,6 +6,8 @@ __author__ = "Reed Essick (reed.essick)"
 
 #-------------------------------------------------
 
+from collections import defaultdict
+
 import numpy as np
 
 import matplotlib
@@ -14,9 +16,6 @@ from matplotlib import pyplot as plt
 plt.rcParams['text.usetex'] = True
 
 from optparse import OptionParser
-
-### non-standard libraries
-from naivebayes import utils
 
 #-------------------------------------------------
 
@@ -49,8 +48,21 @@ log_pvalues = []
 for out in args:
     if opts.verbose:
         print( "reading : "+out )
-    pdict = utils.path2pdict(out, exclude=opts.exclude)
-    log_pvalue = np.sum(np.log10(pdict.values()))
+    out_obj = open(out, 'r')
+
+    log_pvalue = 0.0
+
+    line = out_obj.readline()
+    while line:
+        if "channel" in line:
+            chan = line.strip().split("=")[-1]
+            if chan not in opts.exclude: ### skip bad channels
+                for _ in xrange(8):
+                    line = out_obj.readline() ### skip down to the interesting one
+                log_pvalue += np.log10(float( line.strip().split('=')[1] ))
+
+        line = out_obj.readline()
+    out_obj.close()
 
     if opts.verbose:
         print( "    SUM[log(pvalue)] = %.3f"%log_pvalue )
@@ -62,8 +74,18 @@ for out in args:
 if opts.annotation!=None: ### read in data from annotation
     if opts.verbose:
         print( "reading annotation : "+opts.annotation )
-    pdict = utils.path2pdict(opts.annotation)
-    opts.annotation = np.sum(np.log10(pdict.values()))
+    out_obj = open(opts.annotation, 'r')
+
+    opts.annotation = 0.0
+    line = out_obj.readline()
+    while line:
+        if "channel" in line:
+            for _ in xrange(8):
+                line = out_obj.readline() ### skip down to the interesting one
+            opts.annotation += np.log10(float( line.strip().split('=')[1] ))
+
+        line = out_obj.readline()
+    out_obj.close()
 
     if opts.verbose:
         print( "    log(pvalue) = %.3f"%opts.annotation )

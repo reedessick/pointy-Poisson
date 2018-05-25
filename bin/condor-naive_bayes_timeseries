@@ -1,6 +1,6 @@
 #!/usr/bin/env python
 
-__usage__ = "naive_bayes_timeseries [--options] gpsstart gpsstop chanlist.txt"
+__usage__ = "condor-naive_bayes_timeseries [--options] gpsstart gpsstop chanlist.txt"
 __description__ = """\
 generate a NaiveBayes classifier based on the channels in chanlist.txt and compute an assoicated timeseries within [gpsstart, gpsstop]. \
 We assume chanlist.txt is an ASCII file with each line containing a channel name and its sample rate, corresponding to the output format of FrChannels"""
@@ -30,6 +30,9 @@ from naivebayes import utils
 parser = OptionParser(usage=__usage__, description=__description__)
 
 parser.add_option('-v', '--verbose', default=False, action='store_true')
+
+parser.add_option('', '--start', default=-np.infty, type='float')
+parser.add_option('', '--stop', default=+np.infty, type='float')
 
 parser.add_option('', '--srate', default=64, type='float',
     help='sample rate for things like p-value estimates, specified in Hz. \
@@ -74,11 +77,13 @@ parser.add_option('', '--do-not-plot-singlechan', default=False, action='store_t
 opts, args = parser.parse_args()
 assert len(args)==3, "please supply exactly 3 input arguments\n%s"%__usage__
 gpsstart, gpsstop = [float(_) for _ in args[:2]]
-gpsdur = gpsstop - gpsstart
+opts.start = np.max(opts.start, gpsstart)
+opts.stop = np.min(opts.stop, gpsstop)
+dur = opts.stop - opts.start
 
 chanlist_path = args[2]
 
-opts.plot_start_dur.insert(0, (gpsstart, gpsdur))
+opts.plot_start_dur.insert(0, (start, dur))
 
 opts.output_dir = os.path.abspath(opts.output_dir)
 if not os.path.exists(opts.output_dir):
@@ -90,6 +95,8 @@ else:
     filetag = ""
 
 observatory = opts.frametype[0] ### FIXME: extraction of observatory from frame type may be fragile...
+
+cwd = os.getcwd()
 
 opts.kwsignif_thr.sort(reverse=True) ### order from largest to smallest
 
@@ -147,7 +154,7 @@ trgs = utils.paths2trgs(
 ###----------- naive_bayes ESTIMATION
 if opts.verbose:
     print( "" )
-gps = np.arange(gpsstart, gpsstop, 1./opts.srate),
+gps = np.arange(opts.start, opts.stop, 1./opts.srate), ### only analyze the subset specified in comand line
 nbys = utils.trgs2timeseries(
     gps,
     trgs,
@@ -164,7 +171,7 @@ nbys = utils.trgs2timeseries(
 if opts.verbose:
     print( "saving naive bayes ranking statistic" )
 
-path = "%s/naivebayes%s-%d-%d.npy"%(opts.output_dir, filetag, gpsstart, gpsdur)
+path = "%s/naivebayes%s-%d-%d.npy"%(opts.output_dir, filetag, start, dur)
 if opts.verbose:
     print( "    "+path )
 np.save(path, nbays)
@@ -175,7 +182,7 @@ if opts.plot:
     if opts.reference_gps!=None:
         tref = int(opts.reference_gps)
     else:
-        tref = int(gpsstart)
+        tref = int(start)
 
     fig = plt.figure()
     ax = fig.gca()

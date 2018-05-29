@@ -366,7 +366,7 @@ if opts.plot:
     ax.set_title('Naive Bayes Joint Statistic')
 
     if opts.reference_gps!=None:
-        ax.plot(ax.get_xlim(), [np.interp(tref, gps, nbays)]*2, 'k--')
+        ax.plot(ax.get_xlim(), [np.interp(opts.reference_gps, gps, nbays)]*2, 'k--')
         ax.plot([opts.reference_gps-tref]*2, ax.get_ylim(), 'k--')
 
     for start, dur in opts.plot_start_dur:
